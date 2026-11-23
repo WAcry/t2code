@@ -19,6 +19,7 @@ import {
   replacedVersionedAppImagePath,
 } from "./DesktopLinuxUrlHandler.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
+import { isForkDesktopVersion } from "./forkRelease.ts";
 
 export interface DesktopPreReadyCommandLineReader {
   readonly hasSwitch: (switchName: string) => boolean;
@@ -42,6 +43,7 @@ export const resolveEarlyLinuxElectronOptionsFromProcess = (
 ): DesktopEarlyElectronStartup.EarlyLinuxElectronOptions =>
   DesktopEarlyElectronStartup.resolveEarlyLinuxElectronOptions({
     env: process.env,
+    appVersion: Electron.app.getVersion(),
     homeDirectory,
     joinPath: NodePath.posix.join,
     readFileString: (path) => NodeFS.readFileSync(path, "utf8"),
@@ -79,6 +81,7 @@ export const make = Effect.gen(function* () {
     if (linux !== null) {
       DesktopEarlyElectronStartup.restoreEarlyLinuxDeviceScaleFactor({
         env: process.env,
+        appVersion: Electron.app.getVersion(),
         homeDirectory,
         joinPath: NodePath.posix.join,
         commandLine: Electron.app.commandLine,
@@ -153,7 +156,9 @@ export const make = Effect.gen(function* () {
                   () => linuxDesktopEntryConfig.appImagePath,
                 ),
               ) ?? process.execPath,
-            scheme: ElectronProtocol.getDesktopScheme(linux.isDevelopment),
+            ...(isForkDesktopVersion(Electron.app.getVersion())
+              ? {}
+              : { scheme: ElectronProtocol.getDesktopScheme(linux.isDevelopment) }),
             ...(iconPath === undefined ? {} : { iconPath }),
           }),
           "utf8",

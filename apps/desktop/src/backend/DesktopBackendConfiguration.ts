@@ -23,6 +23,7 @@ import * as DesktopBackendManager from "./DesktopBackendManager.ts";
 import * as DesktopCliShim from "../app/DesktopCliShim.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopState from "../app/DesktopState.ts";
+import { FORK_HOME_DIRECTORY, isForkDesktopVersion } from "../app/forkRelease.ts";
 import * as DesktopServerExposure from "./DesktopServerExposure.ts";
 import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
@@ -375,6 +376,22 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
     } as const;
   }
 
+  const fork = isForkDesktopVersion(environment.appVersion);
+  const resolveT3Home = (loginHome: string | null) =>
+    fork && loginHome === null
+      ? wslEnv
+          .getUserHome(runningDistro)
+          .pipe(
+            Effect.map(Option.map((home) => `${home.replace(/\/+$/, "")}/${FORK_HOME_DIRECTORY}`)),
+            Effect.map(Option.getOrNull),
+          )
+      : Effect.succeed(loginHome);
+  const missingForkHome = {
+    _tag: "Failed",
+    reason: "WSL could not resolve the Linux user home for the fork data directory.",
+    fatal: false,
+  } as const;
+
   const nodePtyOptions = {
     allowBuild: input.allowBuild,
     nodeEngineRange: serverPackageJson.engines.node,
@@ -423,14 +440,11 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
 
   if (input.runtimeArchive !== null) {
     // Staged runtimes bundle Node and node-pty; provider PATH discovery must not require them.
-    // Probe first: the runtime cache lives under the login shell's T3CODE_HOME.
     const stagedProbe = yield* wslEnv.probeRuntime(runningDistro);
     if (stagedProbe.ok) {
-      const runtime = yield* wslEnv.prepareRuntime(
-        runningDistro,
-        input.runtimeArchive,
-        stagedProbe.t3Home,
-      );
+      const t3Home = yield* resolveT3Home(stagedProbe.t3Home);
+      if (fork && t3Home === null) return missingForkHome;
+      const runtime = yield* wslEnv.prepareRuntime(runningDistro, input.runtimeArchive, t3Home);
       if (runtime.ok) {
         yield* wslServerTree.cleanupLegacy;
         return {
@@ -439,7 +453,7 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
           windowsEntryPath: environment.backendEntryPath,
           runtime: { kind: "executable", entryPath: `${runtime.linuxAppRoot}/t3` },
           resolvedPath: stagedProbe.resolvedPath,
-          t3Home: stagedProbe.t3Home,
+          t3Home,
           runtimeId: input.runtimeArchive.runtimeId,
         } as const;
       }
@@ -476,6 +490,8 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
       : failedNodePty(nodePtyResult);
   }
 
+  const t3Home = yield* resolveT3Home(nodePtyResult.t3Home);
+  if (fork && t3Home === null) return missingForkHome;
   return {
     _tag: "Ready",
     runningDistro,
@@ -486,7 +502,7 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
       linuxEntryPath: `${mounted.linuxAppRoot}/apps/server/dist/bin.mjs`,
     },
     resolvedPath: nodePtyResult.resolvedPath,
-    t3Home: nodePtyResult.t3Home,
+    t3Home,
   } as const;
 });
 

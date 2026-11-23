@@ -142,6 +142,7 @@ interface PackagedWslHarnessContext {
 const withPackagedWslHarness = <A, E, R>(
   input: {
     readonly archiveHash: string;
+    readonly appVersion?: string;
     readonly wsl: (
       context: PackagedWslHarnessContext,
     ) => DesktopWslEnvironment.DesktopWslEnvironmentTestStub;
@@ -215,6 +216,7 @@ const withPackagedWslHarness = <A, E, R>(
               appPath: baseDir,
               platform: "win32",
               resourcesPath: baseDir,
+              ...(input.appVersion === undefined ? {} : { appVersion: input.appVersion }),
             }),
           ),
         ),
@@ -503,6 +505,58 @@ describe("DesktopBackendConfiguration", () => {
           assert.isUndefined(invalidIdentity.wslRuntimeId);
           assert.include(invalidIdentity.args, "/usr/bin/node");
           assert.include(invalidIdentity.args, `${mountedAppRoot}/apps/server/dist/bin.mjs`);
+        }),
+    );
+  });
+
+  it.effect("resolveWsl uses the fork home for staged and mounted runtimes", () => {
+    const resolvedPath = "/usr/bin:/bin";
+    const forkHome = "/home/test/.t3-wacry";
+    const customHome = "/home/test/custom-t3";
+    let loginHome: string | null = null;
+    const stagedHomes: Array<string | null> = [];
+
+    return withPackagedWslHarness(
+      {
+        appVersion: "0.1.12-fork.20261123.5151.1",
+        archiveHash: "a".repeat(64),
+        wsl: () => ({
+          getUserHome: () => Option.some("/home/test"),
+          probeRuntime: () => ({ ok: true, resolvedPath, t3Home: loginHome }),
+          prepareRuntime: (_distro, _archive, t3Home) => {
+            stagedHomes.push(t3Home);
+            return { ok: true, linuxAppRoot: `${t3Home}/wsl-runtime` };
+          },
+          ensureNodePty: () => ({
+            ok: true,
+            nodePath: "/usr/bin/node",
+            resolvedPath,
+            t3Home: loginHome,
+          }),
+        }),
+      },
+      ({ hashPath }) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+          const resolve = configuration.resolveWsl({ port: 5000, distro: "Ubuntu" });
+
+          const staged = yield* resolve;
+          assert.equal(staged.wslT3Home, forkHome);
+          assert.include(staged.args, `T3CODE_HOME=${forkHome}`);
+
+          loginHome = customHome;
+          const stagedWithCustomHome = yield* resolve;
+          assert.equal(stagedWithCustomHome.wslT3Home, customHome);
+          assert.include(stagedWithCustomHome.args, `T3CODE_HOME=${customHome}`);
+          assert.deepEqual(stagedHomes, [forkHome, customHome]);
+
+          loginHome = null;
+          yield* fs.writeFileString(hashPath, "invalid");
+          const mounted = yield* resolve;
+          assert.isUndefined(mounted.wslRuntimeId);
+          assert.include(mounted.args, "/usr/bin/node");
+          assert.include(mounted.args, `T3CODE_HOME=${forkHome}`);
         }),
     );
   });

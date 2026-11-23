@@ -16,6 +16,7 @@ import {
 } from "../ChatView.logic";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { useDeadlinePassed, useNowAfter } from "../../hooks/useDeadline";
+import { useLayoutPaneFocusedRef } from "../../layout/layoutPaneContext";
 import type { usePendingThreadRequests } from "./usePendingThreadRequests";
 import {
   AuthOrchestrationOperateScope,
@@ -81,6 +82,7 @@ import { Atom } from "effect/reactivity";
 import { environmentThreadDetails } from "../../state/threads";
 import { type SideThreadOpenIntent, sideThreadKindOf } from "@t3tools/client-runtime/side-thread";
 import { openSideThread, resolveThreadOpenRoute } from "../../lib/sideChatPane";
+import { runInNewLayoutTab } from "../../layout/layoutStore";
 import type { useLocalDispatchState } from "./useLocalDispatchState";
 const RELATED_THREAD_SHELL_WAIT_MS = 1_000;
 
@@ -150,6 +152,7 @@ interface ThreadLifecycleInput {
  * banners, opening related threads, and standalone slash commands.
  */
 export function useThreadLifecycle(input: ThreadLifecycleInput) {
+  const paneFocusedRef = useLayoutPaneFocusedRef();
   const {
     environmentId,
     routeThreadKey,
@@ -416,7 +419,9 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
     finishRestore();
     if (currentRouteThreadKeyRef.current === routeThreadKey) {
       window.requestAnimationFrame(() => {
-        if (currentRouteThreadKeyRef.current === routeThreadKey) composerRef.current?.focusAtEnd();
+        if (paneFocusedRef.current && currentRouteThreadKeyRef.current === routeThreadKey) {
+          composerRef.current?.focusAtEnd();
+        }
       });
     }
   };
@@ -524,16 +529,29 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
     }
     const routeRef = resolveThreadOpenRoute(threadRef, shell);
     if (scopedThreadKey(routeRef) === routeThreadKey) return;
-    void navigate({
-      to: "/$environmentId/$threadId",
-      params: buildThreadRouteParams(routeRef),
-    });
+    const open = () =>
+      navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(routeRef),
+      });
+    // This thread's own child opens as a ghost tab beside it, as from the Lineage card.
+    const isChild =
+      activeThreadRef !== null &&
+      routeRef === threadRef &&
+      threadEnvironmentId === activeThreadRef.environmentId &&
+      shell?.lineage.parentThreadId === activeThreadRef.threadId;
+    void (isChild ? runInNewLayoutTab(open, { ghostOf: activeThreadRef }) : open());
   };
   const onOpenRelatedThreadStable = useStableCallback(onOpenRelatedThread);
   const childThreadInputs = useChildThreadInputs(activeThreadRef);
+  // Child approvals live in the parent timeline on their subagent row; only child questions
+  // still need a composer notice.
+  const childQuestionInputs = childThreadInputs
+    .filter((child) => !child.hasPendingApprovals || child.hasPendingUserInput)
+    .map((child) => (child.hasPendingApprovals ? { ...child, hasPendingApprovals: false } : child));
   const childInputNow = childInputNowItem(
     {
-      childThreadInputs,
+      childThreadInputs: childQuestionInputs,
       parentAwaitingUser: Boolean(
         activePendingApproval || activePendingUserInput || activeThreadShell?.hasPendingUserInput,
       ),
@@ -649,7 +667,8 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
         messages,
       )
     : null;
-  // The relative times read the clock; nowMinute re-renders them on the minute.
+  // Derive the formatter clock from the minute subscription so render stays pure.
+  const statusNowMs = Date.parse(`${nowMinute}:00.000Z`);
   const snoozedUntil = activeThreadShell?.snoozedUntil ?? null;
   const settledAt = activeThreadShell?.settledAt ?? null;
   // Same rounding as the sidebar's snoozed shelf, so both read the same hour.
@@ -678,7 +697,9 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
       icon={<CheckCircle2Icon />}
       label={
         settledAt
-          ? gt("Settled {time}", { time: formatRelativeTimeLabel(settledAt, undefined, messages) })
+          ? gt("Settled {time}", {
+              time: formatRelativeTimeLabel(settledAt, statusNowMs, messages),
+            })
           : gt("Settled", { $context: "thread status" })
       }
       clockMinute={nowMinute}
