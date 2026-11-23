@@ -181,6 +181,7 @@ function summarizeThreadRun(
       : turnStatus === "pending" || turnStatus === "running"
         ? {}
         : { turnEnded: true }),
+    ...(run.workspacePreparation?.type === "worktree" ? { preparedWorktree: true as const } : {}),
     ...(run.sourcePlanRef === undefined ? {} : { sourcePlanRef: run.sourcePlanRef }),
   };
 }
@@ -262,6 +263,7 @@ export const REASONING_EFFORT_OPTION_IDS: ReadonlyArray<string> = [
   "variant",
   "reasoning_effort",
   "thinking_level",
+  "thinking",
   "thought_level",
 ];
 
