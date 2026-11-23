@@ -1,0 +1,331 @@
+name: Fork nightly
+
+on:
+  push:
+    branches: ["fork-nightly/**"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish this build from main as a GitHub prerelease
+        type: boolean
+        default: false
+      build_run_id:
+        description: Reuse the successful candidate build for this exact commit
+        type: string
+        required: false
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: fork-nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  source:
+    name: Verify pinned release sources
+    if: github.repository == 'WAcry/t3code'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.pins.outputs.version }}
+      upstream_tag: ${{ steps.pins.outputs.upstream_tag }}
+      upstream_commit: ${{ steps.pins.outputs.upstream_commit }}
+      pr_commit: ${{ steps.pins.outputs.pr_commit }}
+      build_run_id: ${{ steps.pins.outputs.build_run_id }}
+    steps:
+      - name: Verify release and commit ancestry
+        id: pins
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH: ${{ inputs.publish == true }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+        run: |
+          set -euo pipefail
+          if [[ "$PUBLISH" == true && "$GITHUB_REF" != refs/heads/main ]]; then
+            echo 'Publishing requires a dispatch from main.' >&2
+            exit 1
+          fi
+
+          # Vendored gitlinks have no .gitmodules URLs. Read the manifest
+          # directly to avoid checkout's submodule discovery.
+          git init -q
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          git fetch --no-tags --filter=blob:none origin "$GITHUB_SHA"
+          pins="$RUNNER_TEMP/fork-nightly.json"
+          git show "$GITHUB_SHA:.github/fork-nightly.json" > "$pins"
+          upstream_tag=$(jq -er '.upstreamTag | strings' "$pins")
+          upstream_commit=$(jq -er '.upstreamCommit | strings' "$pins")
+          pr_commit=$(jq -er '.prCommit | strings' "$pins")
+          version=$(jq -er '.forkVersion | strings' "$pins")
+
+          [[ "$upstream_tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-nightly\.([0-9]{8}\.[0-9]+)$ ]]
+          version_prefix="${BASH_REMATCH[1]}-fork.${BASH_REMATCH[2]}."
+          [[ "$version" == "$version_prefix"* && "${version#"$version_prefix"}" =~ ^[1-9][0-9]*$ ]]
+          [[ "$upstream_commit" =~ ^[a-f0-9]{40}$ && "$pr_commit" =~ ^[a-f0-9]{40}$ ]]
+
+          upstream=pingdotgg/t3code
+          gh api "repos/$upstream/releases/tags/$upstream_tag" |
+            jq -e '.prerelease and (.draft | not) and (.assets | length > 0)' >/dev/null
+          [[ "$(gh api "repos/$upstream/commits/$upstream_tag" --jq .sha)" == "$upstream_commit" ]]
+          git merge-base --is-ancestor "$upstream_commit" "$GITHUB_SHA"
+          git merge-base --is-ancestor "$pr_commit" "$GITHUB_SHA"
+
+          if [[ -n "$BUILD_RUN_ID" ]]; then
+            if [[ "$PUBLISH" != true || ! "$BUILD_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+              echo 'A numeric candidate build run ID requires publish=true.' >&2
+              exit 1
+            fi
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID" |
+              jq -e --arg sha "$GITHUB_SHA" --arg repo "$GITHUB_REPOSITORY" '
+                .path == ".github/workflows/fork-nightly.yml" and
+                .head_repository.full_name == $repo and
+                .head_sha == $sha and
+                (.head_branch | startswith("fork-nightly/")) and
+                .event == "push" and .conclusion == "success"
+              ' >/dev/null
+          fi
+
+          {
+            echo "version=$version"
+            echo "upstream_tag=$upstream_tag"
+            echo "upstream_commit=$upstream_commit"
+            echo "pr_commit=$pr_commit"
+            echo "build_run_id=${BUILD_RUN_ID:-$GITHUB_RUN_ID}"
+          } >> "$GITHUB_OUTPUT"
+
+  build_bundle:
+    name: Build bundles and test workspace panes
+    if: needs.source.outputs.build_run_id == github.run_id
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout the pinned commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init -q
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
+
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+
+      - name: Install Chromium for workspace browser tests
+        run: node apps/web/node_modules/playwright/cli.js install --with-deps --only-shell chromium
+
+      - name: Test workspace panes
+        run: vp run --filter @t3tools/web test src/layout/
+
+      - name: Build desktop bundles
+        env:
+          RELEASE_VERSION: ${{ needs.source.outputs.version }}
+          T3CODE_TELEMETRY_CHANNEL: dev
+        run: |
+          node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+          vp run build:desktop:bundle
+          node apps/web/scripts/verify-built-boot.ts
+
+      - name: Upload desktop bundles
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: js-bundle
+          path: |
+            apps/server/dist
+            apps/desktop/dist-electron
+          if-no-files-found: error
+          retention-days: 2
+
+  desktop:
+    name: Desktop ${{ matrix.label }}
+    needs: [source, build_bundle]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Linux x64
+            runner: ubuntu-24.04
+            platform: linux
+            target: AppImage
+            arch: x64
+            rust_target: x86_64-unknown-linux-gnu
+            resource_key: linux-x64
+          - label: Linux arm64
+            runner: ubuntu-24.04-arm
+            platform: linux
+            target: AppImage
+            arch: arm64
+            rust_target: aarch64-unknown-linux-gnu
+            resource_key: linux-arm64
+          - label: Windows x64
+            runner: ubuntu-24.04
+            verify_runner: windows-2025
+            platform: win
+            target: nsis
+            arch: x64
+            rust_target: x86_64-pc-windows-msvc
+            resource_key: win32-x64
+          - label: Windows arm64
+            runner: ubuntu-24.04
+            verify_runner: windows-11-arm
+            platform: win
+            target: nsis
+            arch: arm64
+            rust_target: aarch64-pc-windows-msvc
+            resource_key: win32-arm64
+          - label: macOS arm64
+            runner: macos-26
+            platform: mac
+            target: dmg
+            arch: arm64
+            rust_target: aarch64-apple-darwin
+            resource_key: darwin-arm64
+          - label: macOS x64
+            runner: macos-26-intel
+            platform: mac
+            target: dmg
+            arch: x64
+            rust_target: x86_64-apple-darwin
+            resource_key: darwin-x64
+    uses: ./.github/workflows/release-desktop.yml
+    with:
+      ref: ${{ github.sha }}
+      version: ${{ needs.source.outputs.version }}
+      release_channel: preview
+      label: ${{ matrix.label }}
+      runner: ${{ matrix.runner }}
+      job_timeout_minutes: 90
+      verify_runner: ${{ matrix.verify_runner || '' }}
+      platform: ${{ matrix.platform }}
+      target: ${{ matrix.target }}
+      arch: ${{ matrix.arch }}
+      rust_target: ${{ matrix.rust_target }}
+      resource_key: ${{ matrix.resource_key }}
+      # Windows installers embed the matching Linux CLI archive for WSL.
+      cli_archive: ${{ matrix.platform == 'linux' }}
+      launch_check: ${{ matrix.platform != 'win' }}
+      relay_client_tracing: false
+      clerk_publishable_key: ""
+      clerk_jwt_template: ""
+      clerk_cli_oauth_client_id: ""
+      relay_url: ""
+
+  stage:
+    name: Validate and stage desktop release assets
+    needs: [source, desktop]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Download packaged installers
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: desktop-*
+          path: desktop-builds
+
+      - name: Verify every platform and generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir release-assets
+
+          for arch in x64 arm64; do
+            for target in linux:AppImage linux:deb mac:dmg mac:zip win:exe; do
+              platform="${target%:*}"
+              extension="${target#*:}"
+              matches=(desktop-builds/desktop-"$platform"-"$arch"/*."$extension")
+              if [[ ${#matches[@]} -ne 1 || ! -s "${matches[0]:-}" ]]; then
+                echo "Expected exactly one nonempty $platform $arch .$extension package." >&2
+                exit 1
+              fi
+              asset="${matches[0]##*/}"
+              if [[ -e "release-assets/$asset" ]]; then
+                echo "Duplicate release asset name: $asset" >&2
+                exit 1
+              fi
+              cp -- "${matches[0]}" release-assets/
+            done
+          done
+
+          cd release-assets
+          sha256sum -- * > SHA256SUMS
+          sha256sum --check SHA256SUMS
+
+      - name: Upload the verified release assets
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fork-nightly-release-assets
+          path: release-assets/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  publish:
+    name: Publish the fork prerelease
+    if: >-
+      !cancelled() && github.event_name == 'workflow_dispatch' && inputs.publish &&
+      github.ref == 'refs/heads/main' && needs.source.result == 'success' &&
+      (needs.stage.result == 'success' ||
+      (needs.stage.result == 'skipped' && needs.source.outputs.build_run_id != github.run_id))
+    needs: [source, stage]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: fork-nightly-release-assets
+          path: release-assets
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.source.outputs.build_run_id }}
+
+      - name: Upload and publish the verified installers
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ needs.source.outputs.version }}
+          UPSTREAM_TAG: ${{ needs.source.outputs.upstream_tag }}
+          UPSTREAM_COMMIT: ${{ needs.source.outputs.upstream_commit }}
+          PR_COMMIT: ${{ needs.source.outputs.pr_commit }}
+          BUILD_RUN_ID: ${{ needs.source.outputs.build_run_id }}
+        run: |
+          set -euo pipefail
+          tag="v$RELEASE_VERSION"
+          verify_main() {
+            [[ "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" == "$GITHUB_SHA" ]]
+          }
+          verify_main
+          (cd release-assets && sha256sum --check SHA256SUMS)
+
+          if release=$(gh release view "$tag" --json isDraft,isPrerelease,targetCommitish); then
+            jq -e --arg sha "$GITHUB_SHA" '.isDraft and .isPrerelease and .targetCommitish == $sha' <<< "$release" >/dev/null
+          else
+            cat > release-notes.md <<EOF
+          T3 Code Fork Nightly with [workspace panes](https://github.com/pingdotgg/t3code/pull/28845).
+
+          - [Upstream nightly $UPSTREAM_TAG](https://github.com/pingdotgg/t3code/releases/tag/$UPSTREAM_TAG) at \`$UPSTREAM_COMMIT\`.
+          - [Workspace panes source](https://github.com/pingdotgg/t3code/commit/$PR_COMMIT).
+          - [Fork build](https://github.com/$GH_REPO/actions/runs/$BUILD_RUN_ID) from \`$GITHUB_SHA\`.
+
+          Install updates from this repository's GitHub Releases. Windows installers are unsigned. macOS builds are not notarized. CLI archives, mobile apps, and hosted services are outside the fork release.
+          EOF
+            gh release create "$tag" --target "$GITHUB_SHA" --draft --prerelease \
+              --title "T3 Code Fork Nightly $RELEASE_VERSION" --notes-file release-notes.md
+          fi
+
+          gh release upload "$tag" release-assets/* --clobber
+          diff -u \
+            <((cd release-assets && sha256sum -- *) | LC_ALL=C sort) \
+            <(gh release view "$tag" --json assets |
+              jq -r '.assets[] | (.digest | sub("^sha256:"; "")) + "  " + .name' | LC_ALL=C sort)
+          verify_main
+          gh release edit "$tag" --draft=false --prerelease
