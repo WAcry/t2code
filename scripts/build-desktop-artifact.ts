@@ -21,6 +21,12 @@ import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/rela
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import rootPackageJson from "../package.json" with { type: "json" };
 import desktopPackageJson from "../apps/desktop/package.json" with { type: "json" };
+import {
+  FORK_APP_ID,
+  FORK_APP_NAME,
+  FORK_APP_PACKAGE_NAME,
+  isForkDesktopVersion,
+} from "../apps/desktop/src/app/forkRelease.ts";
 import gnomeCaptureBundle from "../apps/desktop/gnome-extension/bundle.json" with { type: "json" };
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
 
@@ -2577,8 +2583,8 @@ export const stageDesktopDmgBackground = Effect.fn("stageDesktopDmgBackground")(
   }
 
   for (const output of [
-    { suffix: "", width: 640, height: 432 },
-    { suffix: "@2x", width: 1280, height: 864 },
+    { suffix: "", width: 660, height: 432 },
+    { suffix: "@2x", width: 1320, height: 864 },
   ] as const) {
     const targetPath = path.join(
       stageResourcesDir,
@@ -2755,7 +2761,9 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
 });
 
 export function resolveDesktopUpdateChannel(version: string): "latest" | "nightly" {
-  return /-nightly\.\d{8}\.\d+$/.test(version) ? "nightly" : "latest";
+  return isForkDesktopVersion(version) || /-nightly\.\d{8}\.\d+$/.test(version)
+    ? "nightly"
+    : "latest";
 }
 
 export function isDesktopPreviewVersion(version: string): boolean {
@@ -2798,6 +2806,7 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
 }
 
 export function resolveDesktopProductName(version: string): string {
+  if (isForkDesktopVersion(version)) return `${FORK_APP_NAME} (Nightly)`;
   return resolveDesktopUpdateChannel(version) === "nightly"
     ? "T3 Code (Nightly)"
     : (desktopPackageJson.productName ?? "T3 Code");
@@ -2819,9 +2828,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   wslRuntimeBundled = false,
   arch?: typeof BuildArch.Type,
 ) {
+  const isFork = isForkDesktopVersion(version);
   const buildConfig: Record<string, unknown> = {
     afterPack: (yield* Path.Path).join(yield* RepoRoot, "scripts/prepare-server-compile-cache.cjs"),
-    appId: DESKTOP_APP_ID,
+    appId: isFork ? FORK_APP_ID : DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
     artifactName: "T3-Code-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
@@ -2852,7 +2862,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   const updateChannel = resolveDesktopUpdateChannel(version);
   // Missing publish config infers a GitHub feed from tokens; staging has no repository, so manifest generation would crash.
   buildConfig.publish = null;
-  if (!isDesktopPreviewVersion(version)) {
+  if (!isFork && !isDesktopPreviewVersion(version)) {
     const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
     if (publishConfig) {
       buildConfig.publish = [publishConfig];
@@ -2906,10 +2916,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         ],
       },
       protocols: [
-        {
-          name: "T3 Code",
-          schemes: ["t3code", "t3code-dev"],
-        },
+        ...(isFork ? [] : [{ name: "T3 Code", schemes: ["t3code", "t3code-dev"] }]),
         {
           name: "Web site URL",
           schemes: ["http", "https"],
@@ -2932,15 +2939,15 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       title: `${resolveDesktopProductName(version)} ${version} Installer`,
       background: `dmg/dmg-background-${updateChannel}.png`,
       window: {
-        width: 640,
+        width: 660,
         // DMG bounds include Finder's 32px title bar; keep that artwork strip clear.
         height: 432,
       },
       contents: [
-        { x: 166, y: 214, type: "file" },
-        { x: 474, y: 214, type: "link", path: "/Applications" },
+        { x: 180, y: 182, type: "file" },
+        { x: 480, y: 182, type: "link", path: "/Applications" },
       ],
-      iconSize: 120,
+      iconSize: 128,
       iconTextSize: 12,
     };
   }
@@ -2953,21 +2960,16 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     buildConfig.afterPack = path.join(repoRoot, "scripts/linux-after-pack.ts");
     buildConfig.linux = {
       target: target === "AppImage" ? [target, "deb"] : [target],
-      executableName: "t3code",
+      executableName: isFork ? FORK_APP_PACKAGE_NAME : "t3code",
       icon: "icons",
       category: "Development",
       synopsis: "Desktop GUI for coding agents",
-      maintainer: "T3 Tools <hello@t3.codes>",
-      protocols: [
-        {
-          name: "T3 Code",
-          schemes: ["t3code", "t3code-dev"],
-        },
-      ],
+      maintainer: isFork ? "WAcry <WAcry@users.noreply.github.com>" : "T3 Tools <hello@t3.codes>",
+      protocols: isFork ? [] : [{ name: "T3 Code", schemes: ["t3code", "t3code-dev"] }],
       desktop: {
         entry: {
           // Match Electron's WM_CLASS from setDesktopName so docks use this launcher.
-          StartupWMClass: "com.t3tools.T3Code",
+          StartupWMClass: isFork ? FORK_APP_ID : "com.t3tools.T3Code",
         },
       },
     };
@@ -2981,8 +2983,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     buildConfig.deb = {
       // FPM runs outside the staged app directory, so source paths must be absolute.
       fpm: [
-        `${path.join(repoRoot, "apps/desktop/resources/linux/com.t3tools.t3code.metainfo.xml")}=/usr/share/metainfo/com.t3tools.t3code.metainfo.xml`,
-        `${path.join(repoRoot, "LICENSE")}=/usr/share/doc/t3code/copyright`,
+        ...(isFork
+          ? []
+          : [
+              `${path.join(repoRoot, "apps/desktop/resources/linux/com.t3tools.t3code.metainfo.xml")}=/usr/share/metainfo/com.t3tools.t3code.metainfo.xml`,
+            ]),
+        `${path.join(repoRoot, "LICENSE")}=/usr/share/doc/${isFork ? FORK_APP_PACKAGE_NAME : "t3code"}/copyright`,
       ],
       // Debian 13 and Ubuntu 24.04 use 64-bit-time names; retain old-name fallbacks.
       depends: [
@@ -3958,7 +3964,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
       ? path.join(stageAppDir, WINDOWS_SERVER_RESOURCE_SOURCE_DIR, WINDOWS_SERVER_ASAR_RESOURCE)
       : undefined;
   const stagePackageJson: StagePackageJson = {
-    name: "t3code",
+    name: isForkDesktopVersion(appVersion) ? FORK_APP_PACKAGE_NAME : "t3code",
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,
