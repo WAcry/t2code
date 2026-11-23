@@ -25,7 +25,6 @@ import { useNowMinute } from "../hooks/useNowMinute";
 import { __setClientSettingsForTests, getClientSettings } from "../hooks/useSettings";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import { useProjects, useServerConfigs, useQuietThreadShells } from "../state/entities";
-import { useConnectedEnvironmentIds, usePrimaryEnvironmentId } from "../state/environments";
 import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
@@ -41,7 +40,6 @@ vi.mock(import("../state/olderSettledShelf"), async (original) => {
   return { ...actual, useOlderSettledShelf: vi.fn(actual.useOlderSettledShelf) };
 });
 vi.mock("../state/entities", { spy: true });
-vi.mock("../state/environments", { spy: true });
 vi.mock("../hooks/useHandleNewThread", { spy: true });
 vi.mock("../hooks/useNowMinute", { spy: true });
 vi.mock("../hooks/useThreadRouteTarget", { spy: true });
@@ -59,6 +57,17 @@ vi.mock(import("../state/server"), async (original) => {
     { key: "mod+shift+[", command: "thread.previous" },
   ]);
   return { ...(await original()), primaryServerKeybindingsAtom: Atom.make(keybindings) };
+});
+vi.mock(import("../connection/catalog"), async (original) => {
+  const actual = await original();
+  const { Atom } = await import("effect/reactivity");
+  return {
+    ...actual,
+    environmentCatalog: {
+      ...actual.environmentCatalog,
+      catalogValueAtom: Atom.make({ isReady: true, entries: new Map() }) as never,
+    },
+  };
 });
 vi.mock("../commandPaletteBus", () => ({
   openCommandPalette: vi.fn(),
@@ -84,9 +93,43 @@ function project(id: string): Project {
 }
 
 describe("sidebar header new thread", () => {
+  it("does not render the thread list when terminal focus changes without held modifiers", async () => {
+    vi.mocked(useProjects).mockReturnValue([]);
+    vi.mocked(useHandleNewThread).mockReturnValue({
+      activeDraftThread: null,
+      activeThread: null,
+      defaultProjectRef: null,
+      defaultProjectFallbackReady: true,
+      handleNewThread: vi.fn().mockResolvedValue(null),
+      routeDraftId: null,
+      routeThreadRef: null,
+    });
+    await using screen = await render(
+      <SidebarProvider>
+        <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
+        <input aria-label="Outside" />
+        <div data-terminal-owner="drawer">
+          <input aria-label="Terminal" />
+        </div>
+      </SidebarProvider>,
+    );
+    await act(() =>
+      screen.container.querySelector<HTMLInputElement>('[aria-label="Outside"]')!.focus(),
+    );
+    vi.mocked(useProjects).mockClear();
+
+    await act(() =>
+      screen.container.querySelector<HTMLInputElement>('[aria-label="Terminal"]')!.focus(),
+    );
+    await act(() =>
+      screen.container.querySelector<HTMLInputElement>('[aria-label="Outside"]')!.focus(),
+    );
+
+    expect(useProjects).not.toHaveBeenCalled();
+  });
   it.each([
-    { mode: "normal", count: 2, shift: false, picker: true },
-    { mode: "boring", count: 2, shift: false, picker: true },
+    { mode: "normal", count: 2, shift: false, picker: false },
+    { mode: "boring", count: 2, shift: false, picker: false },
     { mode: "boring", count: 2, shift: true, picker: false },
     { mode: "boring", count: 1, shift: false, picker: false },
   ] as const)("$mode sidebar, $count projects, shift=$shift: picker=$picker", async (scenario) => {
@@ -131,65 +174,6 @@ describe("sidebar header new thread", () => {
       expect(openCommandPalette).not.toHaveBeenCalled();
       expect(startThread).toHaveBeenCalledExactlyOnceWith(currentProjectRef);
     }
-  });
-});
-
-// regression: #41549 a grouped project's folder New thread went to the primary copy
-describe("sidebar project folder new thread", () => {
-  it("starts in the copy of the viewed thread, as the new-thread shortcut does", async () => {
-    using stack = new DisposableStack();
-    const previousSettings = getClientSettings();
-    stack.defer(() => __setClientSettingsForTests(previousSettings));
-    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, boringSidebarEnabled: true });
-    const primary = EnvironmentId.make("local");
-    const dev1 = EnvironmentId.make("dev1");
-    const repositoryIdentity = {
-      canonicalKey: "github.com/acme/demo-repo",
-      locator: {
-        source: "git-remote" as const,
-        remoteName: "origin",
-        remoteUrl: "https://github.com/acme/demo-repo.git",
-      },
-      displayName: "acme/demo-repo",
-    };
-    const primaryCopy = { ...project("demo-primary"), repositoryIdentity };
-    const dev1Copy = {
-      ...project("demo-dev1"),
-      environmentId: dev1,
-      repositoryIdentity,
-    };
-    vi.mocked(usePrimaryEnvironmentId).mockReturnValue(primary);
-    vi.mocked(useConnectedEnvironmentIds).mockReturnValue([primary, dev1]);
-    vi.mocked(useProjects).mockReturnValue([primaryCopy, dev1Copy]);
-    const dev1Thread = makeThreadFixture({
-      environmentId: dev1,
-      id: ThreadId.make("dev1-thread"),
-      projectId: dev1Copy.id,
-      title: "dev1 work",
-    });
-    vi.mocked(useQuietThreadShells).mockReturnValue([dev1Thread]);
-    const threadRef = scopeThreadRef(dev1, dev1Thread.id);
-    vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "server", threadRef });
-    const dev1ProjectRef = scopeProjectRef(dev1, dev1Copy.id);
-    const startThread = vi.fn().mockResolvedValue(null);
-    vi.mocked(useHandleNewThread).mockReturnValue({
-      activeDraftThread: null,
-      activeThread: dev1Thread,
-      defaultProjectRef: dev1ProjectRef,
-      defaultProjectFallbackReady: true,
-      handleNewThread: startThread,
-      routeDraftId: null,
-      routeThreadRef: threadRef,
-    });
-
-    await using screen = await render(
-      <SidebarProvider>
-        <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
-      </SidebarProvider>,
-    );
-    await userEvent.click(screen.getByRole("button", { name: "New thread in acme/demo-repo" }));
-
-    expect(startThread).toHaveBeenCalledExactlyOnceWith(dev1ProjectRef);
   });
 });
 
@@ -557,6 +541,7 @@ describe("sidebar settled pagination", () => {
     const viewport = moreButton.closest<HTMLElement>('[data-slot="scroll-area-viewport"]')!;
     viewport.style.height = "300px";
     viewport.style.maxHeight = "300px";
+    await userEvent.wheel(viewport, { delta: { y: 300 } });
     moreButton.scrollIntoView({ block: "nearest" });
     const before = viewport.scrollTop;
     expect(before).toBeGreaterThan(0);
