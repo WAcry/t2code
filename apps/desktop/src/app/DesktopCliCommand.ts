@@ -20,6 +20,7 @@ import { pathSetup, readUserLoginShell } from "@t3tools/shared/shell";
 import * as DesktopCliShim from "./DesktopCliShim.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import { makeComponentLogger } from "./DesktopObservability.ts";
+import { isForkDesktopVersion } from "./forkRelease.ts";
 
 const { logInfo, logWarning } = makeComponentLogger("desktop-cli-command");
 
@@ -79,6 +80,23 @@ export class DesktopCliCommand extends Context.Service<
 
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
+  if (isForkDesktopVersion(environment.appVersion)) {
+    const unavailable = Effect.fail(
+      new DesktopCliCommandError({ message: "This fork ships as a desktop app." }),
+    );
+    return DesktopCliCommand.of({
+      state: Effect.succeed({
+        supported: false,
+        installedPath: null,
+        onPath: false,
+        launcherPath: null,
+      }),
+      install: unavailable,
+      uninstall: unavailable,
+      addToPath: unavailable,
+      installOnFirstLaunch: Effect.void,
+    });
+  }
   const fs = yield* FileSystem.FileSystem;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   // Read the live env: shell discovery patches PATH after startup, and Windows variable

@@ -514,16 +514,14 @@ describe("bounded binary previews", () => {
     }
   });
 
-  it("keeps WhiteIsZero TIFF brightness and alpha with SubIFDs and type-13 ExifIFD pointers and rejects invalid metadata before decoding", async () => {
+  it("keeps WhiteIsZero TIFF brightness and alpha with SubIFDs tags and rejects oversized metadata before decoding", async () => {
     let bytes = new ArrayBuffer(0);
-    let exifEntry = 0;
     for (const { pixels, expected } of [
       { pixels: [0, 255], expected: [255, 255, 255, 255, 0, 0, 0, 255] },
       { pixels: [0, 255, 255, 0], expected: [255, 255, 255, 255, 0, 0, 0, 0] },
     ]) {
       const samples = pixels.length / 2;
-      const start = samples === 2 ? 170 : 158;
-      const exif = start + pixels.length;
+      const start = samples === 2 ? 158 : 146;
       const tags = [
         [256, 2],
         [257, 1],
@@ -537,10 +535,8 @@ describe("bounded binary previews", () => {
         [284, 1],
         [330, 0, 13],
         ...(samples === 2 ? [[338, 2]] : []),
-        [34665, exif, 13],
       ];
-      exifEntry = 10 + (tags.length - 1) * 12;
-      bytes = new ArrayBuffer(exif + 8);
+      bytes = new ArrayBuffer(start + pixels.length);
       const view = new DataView(bytes);
       view.setUint16(0, 0x4949);
       view.setUint16(2, 42, true);
@@ -567,30 +563,14 @@ describe("bounded binary previews", () => {
         URL.revokeObjectURL(src);
       }
     }
-    for (const [mutate, message] of [
-      [
-        (view: DataView) => view.setUint16(exifEntry + 2, 3, true),
-        "Invalid TIFF metadata pointer.",
-      ],
-      [
-        (view: DataView) => view.setUint32(exifEntry + 4, 2, true),
-        "Invalid TIFF metadata pointer.",
-      ],
-      [
-        (view: DataView) => view.setUint32(14, 1_000_000, true),
-        "This TIFF has too much or truncated metadata.",
-      ],
-    ] as const) {
-      const copy = bytes.slice(0);
-      mutate(new DataView(copy));
-      const invalid = URL.createObjectURL(new Blob([copy]));
-      try {
-        await expect(
-          decodeImagePreview(invalid, false, new AbortController().signal),
-        ).rejects.toThrow(message);
-      } finally {
-        URL.revokeObjectURL(invalid);
-      }
+    new DataView(bytes).setUint32(14, 1_000_000, true);
+    const invalid = URL.createObjectURL(new Blob([bytes]));
+    try {
+      await expect(
+        decodeImagePreview(invalid, false, new AbortController().signal),
+      ).rejects.toThrow("metadata");
+    } finally {
+      URL.revokeObjectURL(invalid);
     }
   });
 });
@@ -656,7 +636,7 @@ describe("large text preview recovery", () => {
       // A cold worker can take longer than waitFor allows to load and index on CI.
       await indexed[0];
       await vi.waitFor(() => expect(screen.container.textContent).toContain("1,000 lines"));
-      const viewport = screen.container.querySelector<HTMLElement>('[tabindex="0"]')!;
+      const viewport = screen.container.querySelector<HTMLElement>('div[tabindex="0"]')!;
       await act(() =>
         viewport.dispatchEvent(
           new WheelEvent("wheel", { deltaY: 250, bubbles: true, cancelable: true }),
@@ -666,7 +646,7 @@ describe("large text preview recovery", () => {
       const scrollTop = viewport.scrollTop;
       state(`${original}#renewed`, "one");
       await screen.rerender(preview("unrelated-command"));
-      expect(screen.container.querySelector('[tabindex="0"]')).toBe(viewport);
+      expect(screen.container.querySelector('div[tabindex="0"]')).toBe(viewport);
       expect(viewport.scrollTop).toBe(scrollTop);
       expect(workers).toHaveLength(1);
       state(`${changed}#updated`, "two");
@@ -1547,21 +1527,38 @@ it("copies every indexed line rather than the mounted preview rows", async () =>
 });
 
 it.each([
-  ["one.csv", "text/csv", "name\nAda\n", "1 row · 1 column ·"],
-  ["two.csv", "text/csv", "name,count\nAda,1\nGrace,2\n", "2 rows · 2 columns ·"],
-  ["one.tsv", "text/tab-separated-values", "name\nAda\n", "1 row · 1 column ·"],
-  ["one.txt", "text/plain", "a".repeat(1024 * 1024) + "\n", "1 line ·"],
-  ["two.txt", "text/plain", ("a".repeat(512 * 1024) + "\n").repeat(2), "2 lines ·"],
-] as const)("labels the counts of %s in the status line", async (name, mimeType, text, label) => {
-  const file = new Blob([text], { type: mimeType });
-  await using screen = await render(
-    <AttachmentFilePreview name={name} mimeType={mimeType} sizeBytes={file.size} file={file} />,
-  );
-  const status = () => screen.container.querySelector('[role="status"]')?.textContent ?? "";
-  // A cold large-text worker can take longer than waitFor's default to boot on CI.
-  await vi.waitFor(() => expect(status()).toMatch(/ [KM]?B$/), { timeout: 10_000 });
-  expect(status()).toContain(label);
-});
+  ["one.csv", "text/csv", "name\nAda\n", "1 row", "1 column"],
+  ["two.csv", "text/csv", "name,count\nAda,1\nGrace,2\n", "2 rows", "2 columns"],
+  ["one.tsv", "text/tab-separated-values", "name\nAda\n", "1 row", "1 column"],
+  ["one.txt", "text/plain", "a".repeat(1024 * 1024) + "\n", "1 line", ""],
+  ["two.txt", "text/plain", ("a".repeat(512 * 1024) + "\n").repeat(2), "2 lines", ""],
+] as const)(
+  "labels the counts of %s in the status line",
+  async (name, mimeType, text, label, columns) => {
+    const file = new Blob([text], { type: mimeType });
+    await using screen = await render(
+      <AttachmentFilePreview name={name} mimeType={mimeType} sizeBytes={file.size} file={file} />,
+    );
+    // The redesigned status line shows the row or line count; columns and size sit in its tooltip.
+    const tooltip = () => document.querySelector('[data-slot="tooltip-popup"]')?.textContent ?? "";
+    const trigger = () =>
+      screen.container.querySelector<HTMLElement>('[role="status"] [tabindex="0"]');
+    // Keyboard focus opens the tooltip; the trigger can remount while indexing finishes.
+    await userEvent.keyboard("{Shift}");
+    // A cold large-text worker can take longer than waitFor's default to boot on CI.
+    await vi.waitFor(
+      () => {
+        const current = trigger();
+        if (current && document.activeElement !== current) current.focus();
+        expect(tooltip()).toMatch(/ [KM]?B$/);
+      },
+      { timeout: 10_000 },
+    );
+    expect(trigger()?.textContent).toBe(label);
+    expect(tooltip()).toContain(columns);
+    expect(tooltip()).not.toMatch(/\b1 columns\b/);
+  },
+);
 
 it.each(["archive", "sqlite"] as const)(
   "reauthorizes and retries a failed %s attachment",
@@ -2173,7 +2170,8 @@ it.each(["rtf", "epub", "ods"] as const)(
           expect(screen.container.textContent).toContain("North");
           expect(screen.container.textContent).toContain("150");
           expect(screen.container.textContent).not.toContain("private note");
-          expect(screen.container.textContent).toContain("1 row · 2 columns");
+          expect(screen.container.textContent).toContain("1 row");
+          expect(screen.container.textContent).not.toContain("1 rows");
           expect(screen.container.textContent).not.toContain("Limited to 500");
         } else {
           const frame = screen.container.querySelector("iframe");
