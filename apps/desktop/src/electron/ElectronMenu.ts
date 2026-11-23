@@ -85,6 +85,9 @@ function normalizeContextMenuItems(source: readonly ContextMenuItem[]): ContextM
       disabled: sourceItem.disabled === true,
       ...(sourceItem.separatorBefore === true ? { separatorBefore: true } : {}),
       ...(typeof sourceItem.checked === "boolean" ? { checked: sourceItem.checked } : {}),
+      ...(typeof sourceItem.accelerator === "string"
+        ? { accelerator: sourceItem.accelerator }
+        : {}),
     };
 
     if (sourceItem.children) {
@@ -173,6 +176,8 @@ export const make = Effect.gen(function* () {
         label: item.label.replaceAll("&", "&&"),
         enabled: !item.disabled,
         ...(typeof item.checked === "boolean" ? { type: "checkbox", checked: item.checked } : {}),
+        // Shown beside the label for learning; the app's own handler runs the key.
+        ...(item.accelerator ? { accelerator: item.accelerator, registerAccelerator: false } : {}),
       };
       if (item.children && item.children.length > 0) {
         itemOption.submenu = buildTemplate(item.children, complete);

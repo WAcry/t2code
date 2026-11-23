@@ -404,9 +404,7 @@ export function isAtomCommandInterrupted(result: AtomCommandResult<unknown, unkn
 export function squashAtomCommandFailure(result: {
   readonly cause: Cause.Cause<unknown>;
 }): unknown {
-  const squashed = Cause.squash(result.cause);
-  // A server `Effect.die("text")` decodes over RPC as a bare string; callers read `Error`s.
-  return typeof squashed === "string" ? new Error(squashed) : squashed;
+  return Cause.squash(result.cause);
 }
 
 export async function settleAsyncResult<A, E>(

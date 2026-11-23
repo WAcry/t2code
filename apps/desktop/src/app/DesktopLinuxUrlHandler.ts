@@ -11,6 +11,7 @@ import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import { makeComponentLogger } from "./DesktopObservability.ts";
+import { isForkDesktopVersion } from "./forkRelease.ts";
 
 // AppImage integrators choose the .desktop filename, so setDesktopName cannot identify it for protocol registration.
 const { logInfo, logWarning } = makeComponentLogger("desktop-linux-url-handler");
@@ -79,7 +80,7 @@ const escapeUrlHandlerExecTarget = (value: string): string =>
 export function renderUrlHandlerDesktopEntry(input: {
   readonly displayName: string;
   readonly execTarget: string;
-  readonly scheme: string;
+  readonly scheme?: string;
   readonly iconPath?: string;
 }): string {
   return [
@@ -91,7 +92,7 @@ export function renderUrlHandlerDesktopEntry(input: {
     "Terminal=false",
     "NoDisplay=true",
     "StartupNotify=false",
-    `MimeType=x-scheme-handler/${input.scheme};`,
+    ...(input.scheme === undefined ? [] : [`MimeType=x-scheme-handler/${input.scheme};`]),
     "",
   ].join("\n");
 }
@@ -152,6 +153,7 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const assets = yield* DesktopAssets.DesktopAssets;
+  const isFork = isForkDesktopVersion(environment.appVersion);
 
   const scheme = ElectronProtocol.getDesktopScheme(environment.isDevelopment);
   const desktopEntryPath = environment.path.join(
@@ -175,7 +177,7 @@ export const make = Effect.gen(function* () {
     const content = renderUrlHandlerDesktopEntry({
       displayName: environment.displayName,
       execTarget,
-      scheme,
+      ...(isFork ? {} : { scheme }),
       ...(environment.isPackaged ? { iconPath } : {}),
     });
     // Avoid truncating the pre-ready entry while the portal may be reading it.
@@ -339,6 +341,7 @@ export const make = Effect.gen(function* () {
     );
 
     yield* installThemeIcons;
+    if (isFork) return;
 
     yield* updateDesktopDatabase.pipe(
       // GIO verifies scheme associations through mimeinfo.cache. A missing cache updater must not block xdg-mime.

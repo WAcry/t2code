@@ -1,8 +1,7 @@
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m as resolveMessage } from "~/i18n/messages";
 import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
-import { Spinner } from "~/components/ui/spinner";
-import { ArchiveIcon, ArchiveX, Trash2Icon } from "lucide-react";
+import { ArchiveIcon, ArchiveRestoreIcon, CheckCheckIcon, Trash2Icon } from "lucide-react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { presentThreadShell } from "@t3tools/client-runtime/state/shell";
 import {
@@ -17,15 +16,25 @@ import { readLocalApi } from "../../localApi";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { RelativeTime } from "../RelativeTime";
 import { Button } from "../ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
-import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+import {
+  SettingsPageContainer,
+  SettingsRow,
+  SettingsSection,
+  SettingsToolbar,
+  SettingsSearchField,
+  SettingsNoMatches,
+  SettingsLoadingRows,
+  SettingsEmptyState,
+  SettingsEmptyTiles,
+  SettingsEmptyTile,
+} from "./settingsLayout";
 import { useSearchableSetting } from "./settingsSearch";
 import { ProjectFavicon } from "../ProjectFavicon";
 
-import { msg, T, useGT, useMessages } from "gt-react";
-import { type ReactNode, useRef, useState } from "react";
-import { observeIntersection } from "~/lib/observeIntersection";
-import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
+import { msg, T, useGT, useMessages, Var } from "gt-react";
+import { useRef, useState } from "react";
 
 const ARCHIVE_ACTIONS = [
   {
@@ -33,7 +42,7 @@ const ARCHIVE_ACTIONS = [
     label: msg("Unarchive"),
     threadLabel: msg("Unarchive {title}"),
     failureTitle: msg("Failed to unarchive thread"),
-    Icon: ArchiveX,
+    Icon: ArchiveRestoreIcon,
   },
   {
     action: "delete",
@@ -44,43 +53,6 @@ const ARCHIVE_ACTIONS = [
   },
 ] as const;
 type ArchiveAction = (typeof ARCHIVE_ACTIONS)[number]["action"];
-
-const ARCHIVED_ROW_CHUNK_SIZE = 50;
-const ESTIMATED_ARCHIVED_ROW_PX = 67;
-
-// Thousands of archived threads would mount at once, so each chunk of rows mounts only near the
-// visible part of the settings scroller and otherwise keeps its last measured height.
-function ArchivedThreadChunk(props: {
-  readonly rowCount: number;
-  readonly initiallyMounted: boolean;
-  readonly renderRows: () => ReactNode;
-}) {
-  const { rowCount } = props;
-  const [view, setView] = useState({
-    near: props.initiallyMounted,
-    rowHeight: ESTIMATED_ARCHIVED_ROW_PX,
-  });
-  return (
-    <div
-      ref={(node) => {
-        if (!node) return;
-        return observeIntersection(
-          node,
-          (entry) =>
-            setView({
-              near: entry.isIntersecting,
-              rowHeight: entry.boundingClientRect.height / rowCount,
-            }),
-          { root: node.closest("[data-settings-page-scroll]"), rootMargin: "1200px 0px" },
-        );
-      }}
-      className="*:not-first:border-t *:not-first:border-border/50"
-      style={view.near ? undefined : { height: view.rowHeight * rowCount }}
-    >
-      {view.near ? props.renderRows() : null}
-    </div>
-  );
-}
 
 export function ArchivedThreadsPanel() {
   const searchableSetting = useSearchableSetting();
@@ -96,8 +68,10 @@ export function ArchivedThreadsPanel() {
     isLoading: isLoadingArchive,
     refresh: refreshArchivedThreads,
   } = useArchivedThreadSnapshots(scope.environmentIds);
+  const [archiveQuery, setArchiveQuery] = useState("");
+  const normalizedArchiveQuery = archiveQuery.trim().toLowerCase();
 
-  const { groups: archivedGroups, hasMultipleEnvironments } = (() => {
+  const { groups: allArchivedGroups, hasMultipleEnvironments } = (() => {
     const selectedProjectKeys =
       scope.kind === "project" || scope.kind === "checkout"
         ? new Set(scope.members.map((member) => `${member.environmentId}:${member.id}`))
@@ -124,6 +98,8 @@ export function ArchivedThreadsPanel() {
     const threads = archivedSnapshots.flatMap(({ environmentId, snapshot }) =>
       snapshot.threads.map((thread) => ({
         ...presentThreadShell(environmentId, thread),
+        projectTitle:
+          projectsByEnvironmentAndId.get(`${environmentId}:${thread.projectId}`)?.title ?? "",
         environmentLabel: environmentLabels.get(environmentId) ?? environmentId,
       })),
     );
@@ -177,22 +153,32 @@ export function ArchivedThreadsPanel() {
         }
       }
     }
-    const sortedGroups = [];
-    let firstRow = 0;
-    for (const [key, group] of groups) {
-      sortedGroups.push({
-        ...group,
-        key,
-        firstRow,
-        threads: group.threads.toSorted((left, right) => {
-          const leftKey = left.archivedAt ?? left.createdAt;
-          const rightKey = right.archivedAt ?? right.createdAt;
-          return rightKey.localeCompare(leftKey) || right.id.localeCompare(left.id);
-        }),
-      });
-      firstRow += group.threads.length;
-    }
+    const sortedGroups = Array.from(groups, ([key, group]) => ({
+      ...group,
+      key,
+      threads: group.threads.toSorted((left, right) => {
+        const leftKey = left.archivedAt ?? left.createdAt;
+        const rightKey = right.archivedAt ?? right.createdAt;
+        return rightKey.localeCompare(leftKey) || right.id.localeCompare(left.id);
+      }),
+    }));
     return { groups: sortedGroups, hasMultipleEnvironments };
+  })();
+  // Filters the loaded snapshots on the client: a thread matches on its title
+  // or its project's name.
+  const archivedGroups = (() => {
+    if (normalizedArchiveQuery.length === 0) return allArchivedGroups;
+    return allArchivedGroups.flatMap((group) => {
+      const projectMatches = group.title.toLowerCase().includes(normalizedArchiveQuery);
+      const threads = projectMatches
+        ? group.threads
+        : group.threads.filter(
+            (thread) =>
+              thread.title.toLowerCase().includes(normalizedArchiveQuery) ||
+              thread.projectTitle.toLowerCase().includes(normalizedArchiveQuery),
+          );
+      return threads.length > 0 ? [{ ...group, threads }] : [];
+    });
   })();
 
   type ArchivedThread = (typeof archivedGroups)[number]["threads"][number];
@@ -254,106 +240,140 @@ export function ArchivedThreadsPanel() {
     reportFailure(result, gt("Archived thread action failed"));
   };
 
-  const renderRow = (thread: ArchivedThread) => {
-    const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
-    return (
-      <SettingsRow
-        key={`${thread.environmentId}:${thread.id}`}
-        className="rounded-none"
-        onContextMenu={(event) => {
-          event.preventDefault();
-          void handleContextMenu(thread, { x: event.clientX, y: event.clientY });
-        }}
-        title={thread.title}
-        description={
-          <span className={hasMultipleEnvironments ? "block truncate" : undefined}>
-            {hasMultipleEnvironments ? `${thread.environmentLabel} · ` : null}
-            <T>
-              Archived <RelativeTime timestamp={thread.archivedAt ?? thread.createdAt} />
-              {" \u00b7 Created "}
-              <RelativeTime timestamp={thread.createdAt} />
-            </T>
-          </span>
-        }
-        control={
-          <div className="flex shrink-0 items-center gap-2">
-            {ARCHIVE_ACTIONS.map(({ action, label, threadLabel, Icon }) => (
-              <Tooltip key={action}>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      type="button"
-                      variant={action === "delete" ? "destructive-outline" : "outline"}
-                      size="icon-sm"
-                      aria-label={m(threadLabel, { title: thread.title })}
-                      disabled={pendingKeys.has(threadKey)}
-                      onClick={() => void handleThreadAction(action, thread)}
-                    />
-                  }
-                >
-                  <Icon className="size-3.5" />
-                </TooltipTrigger>
-                <TooltipPopup>{m(label)}</TooltipPopup>
-              </Tooltip>
-            ))}
-          </div>
-        }
-      />
-    );
-  };
-
   return (
-    <SettingsPageContainer>
-      {archivedGroups.length === 0 ? (
+    <SettingsPageContainer
+      centered={allArchivedGroups.length === 0 && !isLoadingArchive && !archiveError}
+    >
+      {allArchivedGroups.length > 0 ? (
+        <SettingsToolbar>
+          <SettingsSearchField
+            value={archiveQuery}
+            onChange={setArchiveQuery}
+            placeholder={gt("Search archived threads")}
+          />
+        </SettingsToolbar>
+      ) : null}
+      {allArchivedGroups.length > 0 && archivedGroups.length === 0 ? (
+        <SettingsNoMatches onClear={() => setArchiveQuery("")}>
+          <T>
+            No archived threads match “<Var>{archiveQuery.trim()}</Var>”.
+          </T>
+        </SettingsNoMatches>
+      ) : null}
+      {allArchivedGroups.length === 0 && (isLoadingArchive || archiveError) ? (
         <SettingsSection
           id={isLoadingArchive ? undefined : searchableSetting("archive").id}
           title={searchableSetting("archive").title}
+          hideTitle
         >
-          <SettingsRow
-            title={
-              <span className="inline-flex items-center gap-2">
-                {isLoadingArchive ? (
-                  <Spinner size="sm" tone="muted" />
-                ) : (
+          {isLoadingArchive ? (
+            <SettingsLoadingRows label={gt("Loading archived threads")} />
+          ) : (
+            <SettingsRow
+              title={
+                <span className="inline-flex items-center gap-2">
                   <ArchiveIcon className="size-3.5 text-muted-foreground" />
-                )}
-                {isLoadingArchive
-                  ? gt("Loading archived threads")
-                  : archiveError
-                    ? gt("Could not load archived threads")
-                    : gt("No archived threads")}
-              </span>
-            }
-            description={
-              isLoadingArchive
-                ? gt("Checking connected environments.")
-                : (archiveError ?? gt("Archived threads will appear here."))
-            }
-          />
+                  {gt("Could not load archived threads")}
+                </span>
+              }
+              description={archiveError}
+            />
+          )}
         </SettingsSection>
+      ) : allArchivedGroups.length === 0 ? (
+        <section id={searchableSetting("archive").id} tabIndex={-1} className="pt-19">
+          <SettingsEmptyState
+            icon={<ArchiveIcon />}
+            title={gt("No archived threads")}
+            description={gt(
+              "Threads you archive stay searchable here and can be restored at any time.",
+            )}
+          >
+            <SettingsEmptyTiles narrow>
+              <SettingsEmptyTile
+                icon={<ArchiveIcon />}
+                title={gt("Archive a thread")}
+                description={gt("From its menu in the sidebar.")}
+              />
+              <SettingsEmptyTile
+                icon={<CheckCheckIcon />}
+                title={gt("Settled threads")}
+                description={gt("Cleared from Settled.")}
+              />
+            </SettingsEmptyTiles>
+          </SettingsEmptyState>
+        </section>
       ) : (
-        archivedGroups.map(({ key, project, title, firstRow, threads: projectThreads }, index) => (
+        archivedGroups.map(({ key, project, title, threads: projectThreads }, index) => (
           <SettingsSection
             key={key}
             id={index === 0 ? searchableSetting("archive").id : undefined}
             title={title}
             icon={<ProjectFavicon project={project} />}
           >
-            {Array.from(
-              { length: Math.ceil(projectThreads.length / ARCHIVED_ROW_CHUNK_SIZE) },
-              (_, chunkIndex) => {
-                const start = chunkIndex * ARCHIVED_ROW_CHUNK_SIZE;
-                const rows = projectThreads.slice(start, start + ARCHIVED_ROW_CHUNK_SIZE);
-                return (
-                  <ArchivedThreadChunk
-                    key={chunkIndex}
-                    rowCount={rows.length}
-                    initiallyMounted={firstRow + start < ARCHIVED_ROW_CHUNK_SIZE}
-                    renderRows={() => rows.map(renderRow)}
-                  />
-                );
-              },
-            )}
+            {projectThreads.map((thread) => {
+              const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
+              return (
+                <SettingsRow
+                  key={`${thread.environmentId}:${thread.id}`}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    void handleContextMenu(thread, { x: event.clientX, y: event.clientY });
+                  }}
+                  title={thread.title}
+                  description={
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      {hasMultipleEnvironments ? (
+                        <span className="w-full truncate">{thread.environmentLabel}</span>
+                      ) : null}
+                      <Tooltip>
+                        <TooltipTrigger render={<span tabIndex={0} />}>
+                          <T>
+                            Archived{" "}
+                            <RelativeTime timestamp={thread.archivedAt ?? thread.createdAt} />
+                          </T>
+                        </TooltipTrigger>
+                        <TooltipPopup side="top">
+                          <T>
+                            Created <RelativeTime timestamp={thread.createdAt} />
+                          </T>
+                        </TooltipPopup>
+                      </Tooltip>
+                      {thread.messageCount === undefined ? null : (
+                        <span>
+                          {gt("{count, plural, one {{count} message} other {{count} messages}}", {
+                            count: thread.messageCount,
+                          })}
+                        </span>
+                      )}
+                    </span>
+                  }
+                  control={
+                    <div className="flex shrink-0 items-center gap-2">
+                      {ARCHIVE_ACTIONS.map(({ action, label, threadLabel, Icon }) => (
+                        <Tooltip key={action}>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                type="button"
+                                variant={action === "delete" ? "destructive-outline" : "secondary"}
+                                size="icon-sm"
+                                aria-label={m(threadLabel, { title: thread.title })}
+                                disabled={pendingKeys.has(threadKey)}
+                                onClick={() => void handleThreadAction(action, thread)}
+                              />
+                            }
+                          >
+                            <Icon className="size-3.5" />
+                          </TooltipTrigger>
+                          <TooltipPopup>{m(label)}</TooltipPopup>
+                        </Tooltip>
+                      ))}
+                    </div>
+                  }
+                />
+              );
+            })}
           </SettingsSection>
         ))
       )}
