@@ -1,5 +1,6 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Vite config runs before any Effect runtime.
 import * as NodeFSP from "node:fs/promises";
+import * as NodeURL from "node:url";
 import * as NodeZlib from "node:zlib";
 
 import react from "@vitejs/plugin-react";
@@ -27,6 +28,7 @@ import { formatAppDisplayName, resolveWebAppStageLabel } from "./src/branding.lo
 
 const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
+const isT2codeBuild = repoEnv.T3CODE_T2CODE_BUILD === "true";
 
 // Signal single-origin dev explicitly; loadRepoEnv can restore deleted URL keys from .env.
 const isSingleOriginDev = process.env.T3CODE_SINGLE_ORIGIN_DEV === "1";
@@ -282,6 +284,7 @@ function bootstrapTitlePlugin(): Plugin {
       development = !config.isProduction;
     },
     transformIndexHtml(html) {
+      if (isT2codeBuild) return html.replaceAll("T3 Code", "t2code");
       const stageLabel = resolveWebAppStageLabel({
         hostedAppChannel: configuredHostedAppChannel,
         development,
@@ -353,6 +356,7 @@ export default defineConfig(({ command }) => {
       ],
     },
     define: {
+      __T3CODE_T2CODE_BUILD__: JSON.stringify(isT2codeBuild),
       "import.meta.env.VITE_WS_URL": JSON.stringify(configuredWsUrl ?? ""),
       // Override .env URLs with empty values in single-origin dev so clients use window.location.origin.
       "import.meta.env.VITE_HTTP_URL": JSON.stringify(configuredHttpUrl ?? ""),
@@ -376,6 +380,15 @@ export default defineConfig(({ command }) => {
       "import.meta.env.APP_VERSION": JSON.stringify(configuredAppVersion),
     },
     resolve: {
+      ...(isT2codeBuild
+        ? {
+            alias: {
+              "../../../../assets/prod/t3-black-web-apple-touch-180.png": NodeURL.fileURLToPath(
+                new URL("../../assets/t2code/apple-touch-icon.png", import.meta.url),
+              ),
+            },
+          }
+        : {}),
       tsconfigPaths: true,
       dedupe: ["react", "react-dom"],
     },

@@ -16,14 +16,29 @@ const forkPaths = new Set([
   manifestPath,
   ".github/workflows/fork-nightly.yml",
   ".github/workflows/release-desktop.yml",
+  "apps/desktop/src/app/DesktopAppIdentity.ts",
+  "apps/desktop/src/app/DesktopEnvironment.ts",
   "apps/desktop/src/updates/DesktopUpdates.ts",
   "apps/desktop/src/updates/DesktopUpdates.test.ts",
   "apps/desktop/src/updates/updatesTestHarness.ts",
+  "apps/desktop/vite.config.ts",
+  "apps/web/src/appIcon.ts",
+  "apps/web/src/appInit.tsx",
+  "apps/web/src/branding.ts",
+  "apps/web/src/components/ClientSettingsRecoveryGate.tsx",
+  "apps/web/src/components/T3Wordmark.tsx",
+  "apps/web/src/components/chat/TimelineAssistantRows.tsx",
+  "apps/web/src/components/onboarding/WelcomePage.tsx",
+  "apps/web/src/components/sidebar/SidebarChrome.tsx",
+  "apps/web/vite.config.ts",
   "FORK.md",
   "knip.jsonc",
+  "scripts/apply-web-brand-assets.ts",
   "scripts/build-desktop-artifact.ts",
   "scripts/build-desktop-artifact.test.ts",
+  "scripts/lib/brand-assets.ts",
   "scripts/prepare-fork-nightly.mjs",
+  "scripts/verify-windows-desktop-artifact.ts",
 ]);
 
 function run(command, args, { input, env } = {}) {
@@ -109,7 +124,9 @@ function checkForkPaths(raw, release) {
   const paths = git("diff", "--name-only", "-z", "--no-renames", raw, release)
     .split("\0")
     .filter(Boolean);
-  const unexpected = paths.filter((path) => !forkPaths.has(path));
+  const unexpected = paths.filter(
+    (path) => !forkPaths.has(path) && !path.startsWith("assets/t2code/"),
+  );
   if (unexpected.length > 0) {
     throw new Error(`Unexpected fork changes need review\n${unexpected.join("\n")}`);
   }
@@ -224,17 +241,20 @@ function main() {
   const releaseTag = nextReleaseTag(nightly.tag, prCommit, previous, values.revision);
   const manifest = { upstreamTag: nightly.tag, upstreamCommit, prCommit, releaseTag };
 
-  const rawTree = mergeTree(null, upstreamCommit, prCommit);
-  const raw = git(
-    "commit-tree",
-    rawTree,
-    "-p",
-    upstreamCommit,
-    "-p",
-    prCommit,
-    "-m",
-    `Merge ${nightly.tag} and PR #28845`,
-  );
+  // Keep the reviewed conflict resolutions when rebuilding the same pinned sources.
+  const raw =
+    upstreamCommit === previous.upstreamCommit && prCommit === previous.prCommit
+      ? previousRaw
+      : git(
+          "commit-tree",
+          mergeTree(null, upstreamCommit, prCommit),
+          "-p",
+          upstreamCommit,
+          "-p",
+          prCommit,
+          "-m",
+          `Merge ${nightly.tag} and PR #28845`,
+        );
   const tree = writeManifest(mergeTree(previousRaw, raw, forkMain), manifest);
   checkForkPaths(raw, tree);
   const candidate = git(

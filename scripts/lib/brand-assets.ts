@@ -37,7 +37,7 @@ export const BRAND_ASSET_PATHS = {
   developmentWebIcon512Png: "assets/dev/blueprint-web-icon-512x512.png",
 } as const;
 
-export type WebAssetBrand = "development" | "nightly" | "production";
+export type WebAssetBrand = "development" | "nightly" | "production" | "t2code";
 
 export const WEB_ASSET_CHANNELS = ["latest", "nightly"] as const;
 
@@ -85,6 +85,14 @@ const WEB_ICON_SOURCE_PATHS_BY_BRAND = {
     appleTouchIconPng: BRAND_ASSET_PATHS.productionWebAppleTouchIconPng,
     icon192Png: BRAND_ASSET_PATHS.productionWebIcon192Png,
     icon512Png: BRAND_ASSET_PATHS.productionWebIcon512Png,
+  },
+  t2code: {
+    faviconIco: "assets/t2code/favicon.ico",
+    favicon16Png: "assets/t2code/favicon-16x16.png",
+    favicon32Png: "assets/t2code/favicon-32x32.png",
+    appleTouchIconPng: "assets/t2code/apple-touch-icon.png",
+    icon192Png: "assets/t2code/icon-192x192.png",
+    icon512Png: "assets/t2code/icon-512x512.png",
   },
 } as const satisfies Record<WebAssetBrand, Record<keyof typeof WEB_ICON_TARGET_FILENAMES, string>>;
 

@@ -41,7 +41,7 @@ import { msg, T, useGT, useLocale, useMessages, Var } from "gt-react";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
-import { MOBILE_APP_URL } from "../../branding";
+import { APP_BASE_NAME, IS_T2CODE_BUILD, MOBILE_APP_URL } from "../../branding";
 import { isElectron } from "../../env";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { usePersistEnvironmentProviderInstanceMutation } from "../../hooks/useSettings";
@@ -281,7 +281,7 @@ export function WelcomePage({
         <div className="min-h-0 flex-1 overflow-y-auto scrollbar-gutter-both">
           <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-12 pb-8 sm:pt-20">
             <h1 className="text-title [--type-title:1.5rem] text-foreground">
-              <T>Welcome to T3 Code</T>
+              {IS_T2CODE_BUILD ? APP_BASE_NAME : <T>Welcome to T3 Code</T>}
             </h1>
             <p className="mt-1.5 text-body text-muted-foreground">
               <T>

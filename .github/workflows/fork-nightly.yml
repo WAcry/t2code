@@ -113,6 +113,8 @@ jobs:
     needs: source
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      T3CODE_T2CODE_BUILD: "true"
     steps:
       - name: Checkout the pinned commit
         shell: bash
@@ -232,6 +234,7 @@ jobs:
       clerk_cli_oauth_client_id: ${{ needs.source.outputs.clerk_cli_oauth_client_id }}
       relay_url: ${{ needs.source.outputs.relay_url }}
       disable_auto_update: true
+      t2code_build: true
 
   stage:
     name: Validate and stage desktop release assets
@@ -307,7 +310,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_VERSION: ${{ needs.source.outputs.version }}
           RELEASE_TAG: ${{ needs.source.outputs.release_tag }}
           UPSTREAM_TAG: ${{ needs.source.outputs.upstream_tag }}
           UPSTREAM_COMMIT: ${{ needs.source.outputs.upstream_commit }}
@@ -326,18 +328,18 @@ jobs:
             jq -e --arg sha "$GITHUB_SHA" '.isDraft and .isPrerelease and .targetCommitish == $sha' <<< "$release" >/dev/null
           else
             cat > release-notes.md <<EOF
-          T3 Code Nightly with [workspace panes](https://github.com/pingdotgg/t3code/pull/28845).
+          **t2code is an independent, unofficial distribution derived from T3 Code.** It includes the [workspace panes redesign](https://github.com/pingdotgg/t3code/pull/28845).
 
           - [Upstream nightly $UPSTREAM_TAG](https://github.com/pingdotgg/t3code/releases/tag/$UPSTREAM_TAG) at \`$UPSTREAM_COMMIT\`.
           - [Workspace panes source](https://github.com/pingdotgg/t3code/commit/$PR_COMMIT).
           - [Fork build](https://github.com/$GH_REPO/actions/runs/$BUILD_RUN_ID) from \`$GITHUB_SHA\`.
 
-          The app uses the upstream nightly's version and configuration directories. Install updates manually from this repository's releases.
+          The public installers display the t2code name. The app retains the upstream nightly's internal app ID, version, and configuration and data directories. Built-in desktop updates are disabled. Install updates manually from this repository's releases.
 
           Windows and Linux packages are available for x64 and arm64. The macOS package is for Intel. Windows installers are unsigned and the macOS build is not notarized.
           EOF
             gh release create "$tag" --target "$GITHUB_SHA" --draft --prerelease \
-              --title "T3 Code Nightly $RELEASE_VERSION + workspace panes" --notes-file release-notes.md
+              --title "t2code $RELEASE_TAG" --notes-file release-notes.md
           fi
 
           gh release upload "$tag" release-assets/* --clobber

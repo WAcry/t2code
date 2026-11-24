@@ -44,6 +44,8 @@ import {
   resolveMacPasskeySigningConfiguration,
   resolveMergedStageDependencies,
   resolveBuildOptions,
+  resolveDesktopBuildIconAssets,
+  resolveDesktopWebAssetBrand,
   stageWslRuntimeArchive,
   ancestorNodeModulesPaths,
   copyDirectoryPreservingSymlinks,
@@ -574,6 +576,69 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
       assert.isArray(standard.publish);
       assert.deepStrictEqual(manual, { ...standard, publish: null });
+    }).pipe(
+      Effect.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({ env: { GITHUB_REPOSITORY: "pingdotgg/t3code" } }),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("uses independent t2code packaging without changing the application ID", () =>
+    Effect.gen(function* () {
+      const version = "0.1.12-nightly.20261123.5165";
+      const mac = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        version,
+        false,
+        false,
+        undefined,
+        undefined,
+        false,
+        "x64",
+        false,
+        true,
+      );
+      const win = yield* createBuildConfig(
+        "win",
+        "nsis",
+        version,
+        false,
+        false,
+        undefined,
+        undefined,
+        true,
+        "x64",
+        false,
+        true,
+      );
+      const upstream = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        version,
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+
+      for (const build of [mac, win]) {
+        assert.equal(build.appId, upstream.appId);
+        assert.equal(build.productName, "t2code");
+        assert.equal(build.artifactName, "t2code-${version}-${arch}.${ext}");
+        assert.isNull(build.publish);
+      }
+      assert.nestedPropertyVal(mac, "dmg.title", `t2code ${version} Installer`);
+      assert.notNestedProperty(mac, "dmg.background");
+      assert.includeMembers(win.extraResources as unknown[], [WSL_RUNTIME_ARCHIVE_EXTRA_RESOURCE]);
+      assert.equal(resolveDesktopWebAssetBrand(version, true), "t2code");
+      assert.deepEqual(resolveDesktopBuildIconAssets(version, true), {
+        macIconPng: "assets/t2code/icon.png",
+        linuxIconPng: "assets/t2code/icon.png",
+        windowsIconIco: "assets/t2code/icon.ico",
+      });
     }).pipe(
       Effect.provide(
         ConfigProvider.layer(

@@ -1,6 +1,6 @@
-# Fork 同步与发布
+# t2code 同步与发布
 
-`WAcry/t3code` 是基于 T3 Code 源码的非官方分栏版，与 T3 Tools, Inc. 无隶属关系。[发布清单](.github/fork-nightly.json)记录已发布的上游 nightly、包含六层改版的 PR #28845 提交，以及本仓库的发布标签。发布提交的第一父提交保留 fork 的 `main` 历史，第二父提交记录本次合并的源码。 [上游发布](https://github.com/pingdotgg/t3code/releases) · [PR #28845](https://github.com/pingdotgg/t3code/pull/28845)
+**t2code 是基于 T3 Code 源码的独立、非官方分栏版。** 发布清单记录已发布的上游 nightly、实现工作区分栏和标签页的 PR #28845 提交，以及本仓库的发布标签。发布提交的第一父提交保留 fork 的 `main` 历史，第二父提交记录本次合并的源码。 [发布清单](.github/fork-nightly.json) · [上游发布](https://github.com/pingdotgg/t3code/releases) · [PR #28845](https://github.com/pingdotgg/t3code/pull/28845)
 
 ## 同步上游
 
@@ -20,31 +20,34 @@ node scripts/prepare-fork-nightly.mjs --pr $reviewedPr
 
 脚本创建本地 `fork-nightly/<发布标签>` 分支。用 `--upstream-tag <标签>` 指定已发布的基线，用 `--revision <编号>` 更新同一 nightly 的发布标签。发生冲突时，保留当前发布，先检查和验证合并结果。
 
-## 发布源码
+## 发布公开安装包
 
-验证候选后，将 fork 的 `main` 快进到同一个提交。在 GitHub 创建预发布，写明上游 nightly、PR 提交和候选 SHA。GitHub 会自动生成源码 ZIP 和 tar.gz。 [Fork 发布页](https://github.com/WAcry/t3code/releases)
+公开安装包显示 t2code 名称，沿用上游 nightly 的内部应用 ID、版本号、配置和数据目录。内置桌面更新已关闭。新版本可从本仓库下载后手动安装。公开构建支持 Windows 和 Linux x64/arm64，以及 Intel macOS。GitHub 预发布同时提供安装包、`SHA256SUMS` 和源码归档。 [Fork 发布页](https://github.com/WAcry/t3code/releases)
+
+将候选分支推送到 fork，由 `Fork nightly` 工作流构建。若工作流处于手动禁用状态，先在 GitHub Actions 中启用。 [构建记录](https://github.com/WAcry/t3code/actions/workflows/fork-nightly.yml)
 
 ```powershell
 $releaseTag = Read-Host '输入候选的发布标签'
 $candidate = "fork-nightly/$releaseTag"
-$pins = git show "${candidate}:.github/fork-nightly.json" | ConvertFrom-Json
-$sha = git rev-parse $candidate
-if (git ls-remote origin "refs/tags/$releaseTag") { throw '发布标签已存在' }
-git push origin "${candidate}:main"
-if ($LASTEXITCODE -ne 0) { throw 'main 推送失败' }
-gh release create $releaseTag --repo WAcry/t3code --target $sha --prerelease `
-  --title "WAcry 分栏版 $releaseTag（源码）" `
-  --notes "上游 nightly $($pins.upstreamTag)，PR 提交 $($pins.prCommit)，发布提交 $sha。"
+git push origin $candidate
 ```
 
-## 本地自用构建与更新
-
-自用安装包沿用上游版本、名称、图标和配置目录。打包时设定 `T3CODE_DESKTOP_DISABLE_AUTO_UPDATE=true`，应用会跳过内置更新。更新时获取新发布的源码，再运行本地打包。以下是 Windows x64 的命令，先准备[打包工具](docs/operations/00_development.md#windows-installer-prerequisites)，再从发布标签的检出目录运行 `vp install`。
+验证通过后，将 `main` 快进到候选提交，并从 `main` 手动触发发布。传入成功的构建编号，工作流会复用同一提交的安装包。
 
 ```powershell
-$version = (Get-Content -Raw .github/fork-nightly.json | ConvertFrom-Json).upstreamTag.TrimStart('v')
-$env:T3CODE_DESKTOP_DISABLE_AUTO_UPDATE = 'true'
-node scripts/build-desktop-artifact.ts --platform win --target nsis --arch x64 --build-version $version
+$buildRunId = Read-Host '输入成功的候选构建编号'
+$sha = git rev-parse $candidate
+$builtSha = gh run view $buildRunId --repo WAcry/t3code --json headSha --jq .headSha
+if ($builtSha -ne $sha) { throw '构建提交与候选提交不一致' }
+gh run watch $buildRunId --repo WAcry/t3code --exit-status
+if ($LASTEXITCODE -ne 0) { throw '候选构建失败' }
+git push origin "${candidate}:main"
+if ($LASTEXITCODE -ne 0) { throw 'main 推送失败' }
+gh workflow run fork-nightly.yml --repo WAcry/t3code --ref main -f publish=true -f "build_run_id=$buildRunId"
 ```
+
+## 品牌改动
+
+公开发布工作流通过 `T3CODE_T2CODE_BUILD` 启用独立名称和图标。图标集中在 `assets/t2code/`，桌面打包和 Web 构建各自读取这套资源。同步上游时，保留发布工作流的开关和对应的品牌入口即可。
 
 以前安装的分栏版仍带有官方更新源。换装带此开关的新构建前，可以从设有 `T3CODE_DISABLE_AUTO_UPDATE=true` 的终端启动旧版来关闭该次运行的更新。
