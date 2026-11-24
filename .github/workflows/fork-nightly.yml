@@ -231,7 +231,7 @@ jobs:
       clerk_jwt_template: ${{ needs.source.outputs.clerk_jwt_template }}
       clerk_cli_oauth_client_id: ${{ needs.source.outputs.clerk_cli_oauth_client_id }}
       relay_url: ${{ needs.source.outputs.relay_url }}
-      update_repository: pingdotgg/t3code
+      disable_auto_update: true
 
   stage:
     name: Validate and stage desktop release assets
@@ -332,7 +332,7 @@ jobs:
           - [Workspace panes source](https://github.com/pingdotgg/t3code/commit/$PR_COMMIT).
           - [Fork build](https://github.com/$GH_REPO/actions/runs/$BUILD_RUN_ID) from \`$GITHUB_SHA\`.
 
-          The app uses the upstream nightly's version, configuration directories, and update feed. An in-app update may install a newer official nightly.
+          The app uses the upstream nightly's version and configuration directories. Install updates manually from this repository's releases.
 
           Windows and Linux packages are available for x64 and arm64. The macOS package is for Intel. Windows installers are unsigned and the macOS build is not notarized.
           EOF

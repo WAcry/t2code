@@ -16,8 +16,13 @@ const forkPaths = new Set([
   manifestPath,
   ".github/workflows/fork-nightly.yml",
   ".github/workflows/release-desktop.yml",
+  "apps/desktop/src/updates/DesktopUpdates.ts",
+  "apps/desktop/src/updates/DesktopUpdates.test.ts",
+  "apps/desktop/src/updates/updatesTestHarness.ts",
   "FORK.md",
   "knip.jsonc",
+  "scripts/build-desktop-artifact.ts",
+  "scripts/build-desktop-artifact.test.ts",
   "scripts/prepare-fork-nightly.mjs",
 ]);
 

@@ -3594,13 +3594,9 @@
   "b90e87f4b7125237": "Details",
   "16dc67f5429d8bae": "Background work",
   "2188eee8f81b0f51": "Open subagent",
-  "3b03fc47eba632b4": "{count, plural, one {{formattedCount} changed file} other {{formattedCount} changed files}}",
   "ec9e0be8ec693302": "Collapse all folders",
   "b791dd86f7991cc0": "Expand all folders",
-  "afaf1bc8535e0adf": "Open diff",
-  "d31b3c7be099ca82": "{count, plural, one {{formattedCount} more file in the full diff} other {{formattedCount} more files in the full diff}}",
   "55b936e3014e16c8": "Open diff",
-  "452dc9eaa945693b": "Open the full diff",
   "28bb7ce40dfd349a": "Terminal output can't be added to a question answer.",
   "801cb8edea94b8f6": "Answer or dismiss the question first, then add it to chat.",
   "aa5507f20d94d5a9": "Update this server to send files with question answers",
@@ -4784,7 +4780,6 @@
   "991cc9fb37606c91": "(empty response)",
   "36e4b8d2db087296": "Fork from this response",
   "c92a0bab54261695": "Reply to this response",
-  "405a3e88ee6e62b3": "This turn's changes in this repository cannot be listed.",
   "f6958f38dc87c712": "Fork from this response",
   "72f8e14b1246d224": "Reply to this response",
   "01d7728e893c281d": "Jump to message: {text}",
@@ -8239,6 +8234,7 @@
   "ea24f015d73520fd": "Delete",
   "d6b75f6c2f576a2c": "Delete {title}",
   "41935b6ab025a13d": "Archived thread action failed",
+  "add343fc1f43258e": "{count, plural, one {{count} message} other {{count} messages}}",
   "ab830753e879ac5f": "Search archived threads",
   "4568f63340b7a586": "Loading archived threads",
   "3ce9741f164fb944": "Could not load archived threads",
@@ -8248,19 +8244,8 @@
   "3620df83bbb0ca02": "From its menu in the sidebar.",
   "84efb81776b1ced6": "Settled threads",
   "28bd13def6edfb48": "Cleared from Settled.",
-  "add343fc1f43258e": "{count, plural, one {{count} message} other {{count} messages}}",
-  "c05a43ba19ee431f": [
-    "No archived threads match “",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    "”."
-  ],
-  "128f70c4e9a7e699": [
-    "Archived",
-    " ",
+  "5a81a2cc634258c3": [
+    "Archived ",
     {
       "i": 1,
       "k": "_gt_time_1",
@@ -8274,6 +8259,15 @@
       "k": "_gt_time_1",
       "v": "rt"
     }
+  ],
+  "c05a43ba19ee431f": [
+    "No archived threads match “",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "”."
   ],
   "ae85d885630b0e51": "{count, plural, one {{count} scope} other {{count} scopes}}",
   "129431563dc043bc": "{label}: show {scopes}",

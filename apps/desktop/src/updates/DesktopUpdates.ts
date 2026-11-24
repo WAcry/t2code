@@ -73,6 +73,11 @@ interface DesktopPreparedUpdateInstallResult extends DesktopUpdateActionResult {
 
 const AppUpdateYmlConfig = Schema.Record(Schema.String, Schema.String);
 type AppUpdateYmlConfig = typeof AppUpdateYmlConfig.Type;
+const decodeUpdatePackageMetadata = Schema.decodeEffect(
+  Schema.fromJsonString(
+    Schema.Struct({ t3codeDisableAutoUpdate: Schema.optional(Schema.Boolean) }),
+  ),
+);
 
 const UpdateInfo = Schema.Struct({
   version: Schema.String,
@@ -347,11 +352,15 @@ function getAutoUpdateDisabledReason(args: {
   platform: NodeJS.Platform;
   appImage?: string | undefined;
   isDebPackage: boolean;
+  disabledByBuild: boolean;
   disabledByEnv: boolean;
   hasUpdateFeedConfig: boolean;
 }): string | null {
   if (args.policy.mode === "off") {
     return args.policy.message ?? "Updates are turned off on this machine.";
+  }
+  if (args.disabledByBuild) {
+    return "Automatic updates are disabled in this build.";
   }
   if (!args.hasUpdateFeedConfig) {
     return "Automatic updates are not available because no update feed is configured.";
@@ -391,8 +400,17 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
   const policy = yield* DesktopUpdatePolicy.DesktopUpdatePolicy;
+  const disabledByBuild =
+    environment.isPackaged &&
+    (yield* fileSystem
+      .readFileString(environment.path.join(environment.appRoot, "package.json"))
+      .pipe(
+        Effect.flatMap(decodeUpdatePackageMetadata),
+        Effect.map((metadata) => metadata.t3codeDisableAutoUpdate === true),
+        Effect.orElseSucceed(() => false),
+      ));
   // Any user can set the mock flag, so it never replaces an administrator's update source.
-  const mockUpdates = config.mockUpdates && policy.message === null;
+  const mockUpdates = !disabledByBuild && config.mockUpdates && policy.message === null;
 
   const appUpdateYmlConfigRef = yield* Ref.make<Option.Option<AppUpdateYmlConfig>>(Option.none());
   const activeUpdateActionRef = yield* Ref.make<Option.Option<UpdateAction>>(Option.none());
@@ -488,6 +506,7 @@ export const make = Effect.gen(function* () {
         platform: environment.platform,
         appImage: Option.getOrUndefined(config.appImagePath),
         isDebPackage,
+        disabledByBuild,
         disabledByEnv: config.disableAutoUpdate,
         hasUpdateFeedConfig: hasFeedConfig,
       }),
@@ -1287,7 +1306,7 @@ export const make = Effect.gen(function* () {
         void Effect.runPromiseWith(context)(effect);
       };
 
-      const appUpdateYmlConfig = yield* readAppUpdateYml;
+      const appUpdateYmlConfig = disabledByBuild ? Option.none() : yield* readAppUpdateYml;
       yield* Ref.set(appUpdateYmlConfigRef, appUpdateYmlConfig);
 
       const notAppliedVersion = yield* readNotAppliedInstallVersion;
@@ -1304,7 +1323,7 @@ export const make = Effect.gen(function* () {
           provider: "generic",
           url: `http://localhost:${config.mockUpdateServerPort}`,
         } as ElectronUpdater.ElectronUpdaterFeedUrl);
-      } else if (policy.feedUrl !== undefined) {
+      } else if (!disabledByBuild && policy.feedUrl !== undefined) {
         // The administrator's mirror replaces the GitHub feed baked into app-update.yml.
         yield* electronUpdater.setFeedURL({
           provider: "generic",

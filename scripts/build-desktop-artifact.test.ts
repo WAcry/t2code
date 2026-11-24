@@ -554,6 +554,35 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     ),
   );
 
+  it.effect("omits the feed without changing the identity of a manual-update nightly", () =>
+    Effect.gen(function* () {
+      const buildNightly = (disableAutoUpdate: boolean) =>
+        createBuildConfig(
+          "mac",
+          "dmg",
+          "0.1.12-nightly.20261123.5151",
+          false,
+          false,
+          undefined,
+          undefined,
+          false,
+          "arm64",
+          disableAutoUpdate,
+        );
+      const standard = yield* buildNightly(false);
+      const manual = yield* buildNightly(true);
+
+      assert.isArray(standard.publish);
+      assert.deepStrictEqual(manual, { ...standard, publish: null });
+    }).pipe(
+      Effect.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({ env: { GITHUB_REPOSITORY: "pingdotgg/t3code" } }),
+        ),
+      ),
+    ),
+  );
+
   it.effect("names the Electron window class in the Linux desktop entry", () =>
     Effect.gen(function* () {
       const linux = yield* createBuildConfig(

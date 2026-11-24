@@ -1380,6 +1380,35 @@ describe("DesktopUpdates under a managed policy", () => {
     ...policy,
   });
 
+  it.effect("keeps a manual-update package off when old and managed feeds exist", () => {
+    const harness = makeHarness({
+      packageMetadata: JSON.stringify({ t3codeDisableAutoUpdate: true }),
+      appUpdateYml: "provider: github\nowner: pingdotgg\nrepo: t3code\n",
+      policy: managed({ feedUrl: "https://updates.example.com/t3code" }),
+    });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        yield* TestClock.adjust("10 minutes");
+
+        const state = yield* updates.getState;
+        assert.equal(state.status, "disabled");
+        assert.equal(state.message, "Automatic updates are disabled in this build.");
+        assert.isFalse((yield* updates.check("menu")).checked);
+        assert.isFalse((yield* updates.download).accepted);
+        assert.isFalse((yield* updates.install).accepted);
+        assert.isFalse((yield* updates.installPrepared("1.2.4")).accepted);
+        assert.equal(harness.checkCount(), 0);
+        assert.equal(harness.downloadCount(), 0);
+        assert.equal(harness.quitAndInstalls(), 0);
+        assert.equal(harness.listenerCount(), 0);
+        assert.deepEqual(harness.feedUrls(), []);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
   it.effect("never checks when updates are off", () => {
     const harness = makeHarness({ policy: managed({ mode: "off" }) });
 

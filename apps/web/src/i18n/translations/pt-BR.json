@@ -3594,13 +3594,9 @@
   "b90e87f4b7125237": "Detalhes",
   "16dc67f5429d8bae": "Trabalho em segundo plano",
   "2188eee8f81b0f51": "Abrir subagente",
-  "3b03fc47eba632b4": "{count, plural, one {{formattedCount} arquivo alterado} other {{formattedCount} arquivos alterados}}",
   "ec9e0be8ec693302": "Recolher todas as pastas",
   "b791dd86f7991cc0": "Expandir todas as pastas",
-  "afaf1bc8535e0adf": "Abrir diff",
-  "d31b3c7be099ca82": "{count, plural, one {Mais {formattedCount} arquivo no diff completo} other {Mais {formattedCount} arquivos no diff completo}}",
   "55b936e3014e16c8": "Abrir diff",
-  "452dc9eaa945693b": "Abrir o diff completo",
   "28bb7ce40dfd349a": "A saída do terminal não pode ser adicionada à resposta de uma pergunta.",
   "801cb8edea94b8f6": "Responda ou dispense a pergunta primeiro e depois adicione ao chat.",
   "aa5507f20d94d5a9": "Atualize este servidor para enviar arquivos com respostas a perguntas",
@@ -4782,7 +4778,6 @@
   "991cc9fb37606c91": "(resposta vazia)",
   "36e4b8d2db087296": "Criar fork a partir desta resposta",
   "c92a0bab54261695": "Responder a esta resposta",
-  "405a3e88ee6e62b3": "Não é possível listar as alterações deste turno neste repositório.",
   "f6958f38dc87c712": "Criar fork a partir desta resposta",
   "72f8e14b1246d224": "Responder a esta resposta",
   "01d7728e893c281d": "Ir para a mensagem: {text}",
@@ -5007,7 +5002,7 @@
   "bd44c0152ee276c1": "em {hours} h {minutes} min",
   "888035725b30714f": "em {minutes} min",
   "c59b3ed93b980b9c": "agora",
-  "a4b4e5eb6d313af9": "Redefinição {time}",
+  "a4b4e5eb6d313af9": "Renovado {time}",
   "a7bfaa71c8b3030b": "Horário de renovação indisponível; tente novamente manualmente",
   "3441bf9b116d3276": "Dispensar aviso de limite de uso",
   "2b07985d23563374": "Retoma {time}",
@@ -5021,8 +5016,8 @@
   "847d9f569fae7112": "Copiar pedido para o administrador",
   "79f13fade1c35ead": "Este contexto não está mais disponível.",
   "90d2d202109eff30": "Enviando…",
-  "11472a9116247cf2": "Anexo de vídeo, {label}, {size}",
-  "609e757f18882874": "Anexo de arquivo, {label}, {size}",
+  "11472a9116247cf2": "Vídeo anexado, {label}, {size}",
+  "609e757f18882874": "Arquivo anexado, {label}, {size}",
   "be4e6fd5b78a1dfe": "Elemento do navegador, {label}",
   "7e9a77787fb72952": "{kind}, {label}, {title}",
   "0fb5b8ddb668d1bd": "{kind}, {label}",
@@ -8232,6 +8227,7 @@
   "ea24f015d73520fd": "Excluir",
   "d6b75f6c2f576a2c": "Excluir {title}",
   "41935b6ab025a13d": "Falha na ação da thread arquivada",
+  "add343fc1f43258e": "{count, plural, one {{count} mensagem} other {{count} mensagens}}",
   "ab830753e879ac5f": "Pesquisar threads arquivadas",
   "4568f63340b7a586": "Carregando as threads arquivadas",
   "3ce9741f164fb944": "Não foi possível carregar as threads arquivadas",
@@ -8241,19 +8237,8 @@
   "3620df83bbb0ca02": "Pelo menu dela na barra lateral.",
   "84efb81776b1ced6": "Threads concluídas",
   "28bd13def6edfb48": "Removida de Concluídas.",
-  "add343fc1f43258e": "{count, plural, one {{count} mensagem} other {{count} mensagens}}",
-  "c05a43ba19ee431f": [
-    "Nenhuma thread arquivada corresponde a “",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    "”."
-  ],
-  "128f70c4e9a7e699": [
-    "Arquivada",
-    " ",
+  "5a81a2cc634258c3": [
+    "Arquivada ",
     {
       "i": 1,
       "k": "_gt_time_1",
@@ -8267,6 +8252,15 @@
       "k": "_gt_time_1",
       "v": "rt"
     }
+  ],
+  "c05a43ba19ee431f": [
+    "Nenhuma thread arquivada corresponde a “",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "”."
   ],
   "ae85d885630b0e51": "{count, plural, one {{count} escopo} other {{count} escopos}}",
   "129431563dc043bc": "{label}: mostrar {scopes}",

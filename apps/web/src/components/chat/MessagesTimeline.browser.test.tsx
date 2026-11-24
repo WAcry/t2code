@@ -1,7 +1,6 @@
 import { resolveTimelineIsAtEnd } from "./MessagesTimeline.logic";
 import { injectHtmlRenderBootstrap } from "@t3tools/shared/htmlRender";
 import { HtmlRenderDocument } from "../files/BrowserDocumentFrame";
-import { flushSync } from "react-dom";
 import { AudioPreview } from "../files/AudioPreview";
 import { cdp, page, userEvent } from "vite-plus/test/browser";
 import {
@@ -23,7 +22,7 @@ import {
 } from "@t3tools/contracts";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
-import { LegendList, type LegendListRef } from "@legendapp/list/react";
+import { type LegendListRef } from "@legendapp/list/react";
 import {
   createRef,
   Profiler,
@@ -41,7 +40,6 @@ import "~/index.css";
 
 import { environmentThreadDetails } from "../../state/threads";
 import { act, fakeTimers, render, stubGlobal } from "../../../test/render";
-import { ChangedFilesCard } from "./ChangedFilesTree";
 import { MessagesTimeline } from "./MessagesTimeline";
 import { timelineGapDevApi } from "./TimelineGapRecorder";
 import { createWorkspaceFocusController, workspaceAreaProps } from "../../lib/workspaceFocus";
@@ -84,15 +82,17 @@ vi.mock(import("~/state/query"), async (original) => ({
   })) as never,
 }));
 
-const stubbedAsset = vi.hoisted(() => ({ url: "" }));
+const stubbedAsset = vi.hoisted(() => ({ url: "", failed: false }));
 vi.mock(import("~/assets/assetUrls"), async (original) => {
   const actual = await original();
   return {
     ...actual,
     useAssetUrlState: ((...args: Parameters<typeof actual.useAssetUrlState>) =>
-      stubbedAsset.url
-        ? { _tag: "Success", url: stubbedAsset.url }
-        : actual.useAssetUrlState(...args)) as typeof actual.useAssetUrlState,
+      stubbedAsset.failed
+        ? { _tag: "Failure" }
+        : stubbedAsset.url
+          ? { _tag: "Success", url: stubbedAsset.url }
+          : actual.useAssetUrlState(...args)) as typeof actual.useAssetUrlState,
     useAssetUrls: ((...args: Parameters<typeof actual.useAssetUrls>) =>
       stubbedAsset.url
         ? args[1].map(() => stubbedAsset.url)
@@ -116,7 +116,6 @@ function baseProps(): Omit<TimelineProps, "timelineEntries"> {
     turnDiffSummaries: [],
     runs: [],
     routeThreadKey: `environment-local:thread-${Math.random().toString(36).slice(2)}`,
-    onOpenTurnDiff: () => {},
     onOpenThread: () => {},
     onForkFromRun: async () => {},
     supportsConversationRollback: false,
@@ -2335,6 +2334,36 @@ describe("MessagesTimeline attachments", () => {
     });
     await vi.waitFor(() => expect(one!.isConnected).toBe(false));
   });
+
+  it("keeps an unavailable viewed image inside the work-log height cap", async () => {
+    stubbedAsset.failed = true;
+    onTestFinished(() => {
+      stubbedAsset.failed = false;
+    });
+    const read = work("read-step-1", {
+      label: "Read step-1.jpg",
+      toolTitle: "Read",
+      tone: "tool",
+      itemType: "dynamic_tool",
+      toolLifecycleStatus: "completed",
+      viewedImagePath: "/repo/step-1.jpg",
+    });
+    await using screen = await renderTimeline([read], { workspaceRoot: "/repo" });
+    await click(screen.button(/Read/));
+    const frame = await vi.waitFor(() => {
+      const element = screen.container.querySelector<HTMLElement>('[role="alert"]');
+      expect(element).toBeTruthy();
+      return element!;
+    });
+    const size = await vi.waitFor(() => {
+      const rect = frame.getBoundingClientRect();
+      expect(rect.width).toBeGreaterThan(0);
+      return rect;
+    });
+    expect(size.height).toBeLessThanOrEqual(257);
+    expect(size.width).toBeLessThanOrEqual(456);
+    expect(Math.abs(size.width / size.height - 16 / 9)).toBeLessThan(0.02);
+  });
 });
 
 describe("MessagesTimeline thread find", () => {
@@ -2713,74 +2742,6 @@ it("renders automatic compaction as one live divider that finishes with its reas
     .toBeVisible();
   expect(container.querySelectorAll('[role="separator"]')).toHaveLength(1);
   expect(container.textContent).not.toContain("Compacting before");
-});
-
-function TimelineChangedFilesCard() {
-  const [expanded, setExpanded] = useState(true);
-  return (
-    <ChangedFilesCard
-      threadRef={null}
-      runId={RunId.make("run-1")}
-      files={["src/a.ts", "src/b.ts", "src/c.ts"].map((path) => ({
-        path,
-        kind: "modified",
-        additions: 1,
-        deletions: 0,
-      }))}
-      totals={{ count: 3, additions: 3, deletions: 0 }}
-      allDirectoriesExpanded={expanded}
-      resolvedTheme="light"
-      onToggleAllDirectories={() => setExpanded((value) => !value)}
-      onOpenTurnDiff={() => {}}
-    />
-  );
-}
-
-function ChangedFilesTimeline() {
-  return (
-    <LegendList
-      data={["files", "after"]}
-      keyExtractor={(item) => item}
-      estimatedItemSize={100}
-      recycleItems={false}
-      className="h-[600px]"
-      renderItem={({ item }) =>
-        item === "files" ? <TimelineChangedFilesCard /> : <div data-testid="after">After</div>
-      }
-    />
-  );
-}
-
-describe("ChangedFilesCard", () => {
-  it.each(["folder", "all folders"])(
-    "measures %s collapse and expansion in the same commit",
-    async (toggle) => {
-      await using screen = await render(<ChangedFilesTimeline />);
-      const after = () =>
-        screen.container.querySelector('[data-testid="after"]')!.getBoundingClientRect().top;
-      const cardBottom = () =>
-        screen.container.querySelector("[data-changed-files-state]")!.getBoundingClientRect()
-          .bottom;
-      await vi.waitFor(() => expect(after()).toBe(cardBottom()));
-      const topBefore = after();
-      const button = () =>
-        screen.container.querySelector<HTMLButtonElement>(
-          toggle === "folder"
-            ? '[data-changed-file-row="src"] button'
-            : 'button[aria-label$="all folders"]',
-        )!;
-      await act(() => {
-        flushSync(() => button().click());
-        expect(screen.container.textContent).not.toContain("a.ts");
-        expect(after()).toBe(topBefore - 3 * 28);
-      });
-      await act(() => {
-        flushSync(() => button().click());
-        expect(screen.container.textContent).toContain("a.ts");
-        expect(after()).toBe(topBefore);
-      });
-    },
-  );
 });
 
 it("keeps concurrent approvals actionable outside collapsed work and restores settled rows", async () => {

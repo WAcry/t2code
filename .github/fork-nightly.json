@@ -1,6 +1,6 @@
 {
-  "upstreamTag": "v0.1.12-nightly.20261123.5151",
-  "upstreamCommit": "856b105fa23f9cb9fdd49a8f102cb66a71b78265",
-  "prCommit": "fa63e87ccaddbc3d594ea194b1b3e632ce53d462",
-  "releaseTag": "v0.1.12-nightly.20261123.5151-pr28845.1"
+  "upstreamTag": "v0.1.12-nightly.20261123.5165",
+  "upstreamCommit": "67c442a17e6e5d6c9f768714820cecb5f15d4f9b",
+  "prCommit": "b23137ed5c241f6c51db166faefc755ca976efc8",
+  "releaseTag": "v0.1.12-nightly.20261123.5165-pr28845.1"
 }
