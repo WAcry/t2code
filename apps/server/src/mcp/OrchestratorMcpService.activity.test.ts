@@ -318,7 +318,12 @@ it("readThread pages cut-off text without splitting an emoji across pages", asyn
       instanceId: parentInstanceId,
       model: "gpt-5.4",
     }),
-    runs: [makeRun({ id: activeRunId, ordinal: 1, status: "running" })],
+    runs: [
+      ...Array.from({ length: 20 }, (_, index) =>
+        makeRun({ id: RunId.make(`run-mcp-${index}`), ordinal: index + 1, status: "completed" }),
+      ),
+      makeRun({ id: activeRunId, ordinal: 21, status: "running" }),
+    ],
     visibleTurnItems: [],
     providerTurns: [],
     runtimeRequests: [],
@@ -343,11 +348,11 @@ it("readThread pages cut-off text without splitting an emoji across pages", asyn
   };
   const rows = [
     row,
-    ...Array.from({ length: 11 }, (_, index) => ({
+    ...Array.from({ length: 30 }, (_, index) => ({
       ...row,
       position: index + 1,
       sourceItemId: TurnItemId.make(`turn-item-mcp-${index}`),
-      item: { ...row.item, text: "x".repeat(600) },
+      item: { ...row.item, text: "x".repeat(8_001) },
     })),
   ];
 
@@ -423,12 +428,13 @@ it("readThread pages cut-off text without splitting an emoji across pages", asyn
       view: "activity",
     });
     expect(first.items[1]).toMatchObject({
-      text: "x".repeat(500),
+      text: "x".repeat(8_000),
       textTruncated: true,
-      nextTextOffset: 500,
+      nextTextOffset: 8_000,
     });
-    expect(first.items).toHaveLength(10);
-    expect(first).toMatchObject({ nextPosition: 9, hasMore: true });
+    expect(first.items).toHaveLength(30);
+    expect(first.recentRuns).toHaveLength(20);
+    expect(first).toMatchObject({ nextPosition: 29, hasMore: true });
   }).pipe(Effect.provide(layer), Effect.runPromise);
 });
 
@@ -588,7 +594,7 @@ it("readThread returns the newest items that fit the response budget", async () 
       runId: activeRunId,
       status: "completed",
       title: null,
-      text: "x".repeat(1_500),
+      text: "x".repeat(4_000),
       updatedAt: now,
     },
   }));
@@ -637,7 +643,7 @@ it("readThread returns the newest items that fit the response budget", async () 
       threadId: parentThreadId,
       view: "activity" as const,
       limit: 100,
-      maxCharsPerItem: 1_500,
+      maxCharsPerItem: 4_000,
     };
     const result = yield* service.readThread(makeScope(), read);
     // An outside MCP client, such as claude.ai, reads without a thread or a link.
@@ -670,8 +676,9 @@ it("readThread returns the newest items that fit the response budget", async () 
       { afterPosition: -1, limit: 100, view: "activity" },
       { beforePosition: Number.POSITIVE_INFINITY, limit: 100, view: "activity" },
     ]);
-    // Claude Code saves results over ~50k chars of this JSON to a file instead of showing them.
-    expect(JSON.stringify(result).length).toBeLessThan(31_000);
+    const resultBytes = Buffer.byteLength(JSON.stringify(result));
+    expect(resultBytes).toBeGreaterThan(250 * 1024);
+    expect(resultBytes).toBeLessThanOrEqual(256 * 1024);
     expect(result.items.length).toBeLessThan(100);
     expect(result.items.at(-1)?.position).toBe(99);
     expect(result.earlierPosition).toBe(result.items[0]?.position);
@@ -689,7 +696,7 @@ it("readThread returns the newest items that fit the response budget", async () 
   }).pipe(Effect.provide(layer), Effect.runPromise);
 });
 
-it("readThread keeps an activity page within an MCP client's output limit and pages the rest", async () => {
+it("readThread pages multibyte text and oversized titles within the response budget", async () => {
   const projection = {
     thread: baseThread({
       threadId: parentThreadId,
@@ -716,7 +723,7 @@ it("readThread keeps an activity page within an MCP client's output limit and pa
       runId: activeRunId,
       status: "completed",
       // Command titles can carry a whole command.
-      title: position === 1 ? "標".repeat(60_000) : null,
+      title: position === 1 ? "標".repeat(100_000) : null,
       text: position === 0 ? "😀a".repeat(30_000) : `${position} `.padEnd(3_000, "x"),
       updatedAt: now,
     },
@@ -777,8 +784,7 @@ it("readThread keeps an activity page within an MCP client's output limit and pa
         maxCharsPerItem: 1_500,
         afterPosition: afterPosition ?? -1,
       });
-      // Claude Code rejects MCP results over 25k tokens; CJK text is about a token per char.
-      expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(50_000);
+      expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(256 * 1024);
       if (page === 0) expect(result.hasMore).toBe(true);
       positions.push(...result.items.map((item) => item.position));
       if (!result.hasMore) break;
@@ -797,7 +803,7 @@ it("readThread keeps an activity page within an MCP client's output limit and pa
         textOffset,
         maxCharsPerItem: 50_000,
       });
-      expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(50_000);
+      expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(256 * 1024);
       const [item] = result.items;
       expect(item?.text?.isWellFormed()).toBe(true);
       pages.push(item!.text!);
@@ -806,7 +812,7 @@ it("readThread keeps an activity page within an MCP client's output limit and pa
     expect(pages.length).toBeGreaterThan(1);
     expect(pages.join("")).toBe(longText);
 
-    (projection.thread as { title: string }).title = "標".repeat(30_000);
+    (projection.thread as { title: string }).title = "標".repeat(120_000);
     const underHugeTitle = yield* service.readThread(makeScope(), {
       threadId: parentThreadId,
       view: "activity",

@@ -849,7 +849,7 @@ export const make = Effect.gen(function* () {
           ({ item }) => historicalMessage(limitCommandOutput(item)) ?? [],
         ),
         coverage: "Digest of the thread that made this change, oldest first.",
-        budget: PR_THREAD_CONTEXT_BYTES,
+        byteBudget: PR_THREAD_CONTEXT_BYTES,
       });
       return selected.messages.length === 0
         ? undefined

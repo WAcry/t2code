@@ -734,9 +734,11 @@ describe("orchestrator MCP toolkit", () => {
         expect(read.isError).not.toBe(true);
         expect(transferReads.length).toBeGreaterThan(0);
         const firstPage = yield* decodeThreadRead(read.structuredContent);
-        const finalItem = firstPage.items.find((item) => item.text === result.slice(0, 500));
+        const finalItem = firstPage.items.find(
+          (item) => item.runId === queuedFollowup.runId && item.type === "assistant_message",
+        );
         expect(finalItem).toBeDefined();
-        if (result.length > 500) {
+        if (finalItem!.textTruncated) {
           yield* invoke("t3_thread_read", {
             threadId: delegated.childThreadId,
             itemId: finalItem!.itemId,

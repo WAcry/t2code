@@ -4828,6 +4828,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               attachments: [],
             },
             {
+              ...itemBase(2, completedRun.id),
+              type: "assistant_message" as const,
+              messageId: MessageId.make("message:pr-thread-context:assistant"),
+              text: "界".repeat(6_000),
+              streaming: false,
+            },
+            {
               ...itemBase(3, completedRun.id),
               type: "command_execution" as const,
               input: "vp test run",

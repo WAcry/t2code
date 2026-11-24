@@ -157,13 +157,11 @@ const TASK_WAKE_EVENTS = [
 const SECRET_REQUEST_POLL_INTERVAL_MS = 500;
 const MAX_LISTED_TASKS = 10;
 const DEFAULT_THREAD_LIST_LIMIT = 10;
-const DEFAULT_THREAD_READ_LIMIT = 10;
-const DEFAULT_THREAD_RUN_LIMIT = 10;
-const DEFAULT_THREAD_ITEM_MAX_CHARS = 500;
+const DEFAULT_THREAD_READ_LIMIT = 30;
+const DEFAULT_THREAD_RUN_LIMIT = 20;
+const DEFAULT_THREAD_ITEM_MAX_CHARS = 8_000;
 const THREAD_PULL_REQUEST_PREVIEW_LIMIT = 5;
-// Claude Code saves MCP results over ~25k tokens to a file instead of showing them. Bytes, not
-// chars: CJK text runs near one token per char, which a char budget lets through at 30k tokens.
-const THREAD_READ_RESULT_MAX_BYTES = 30_000;
+const THREAD_READ_RESULT_MAX_BYTES = 256 * 1024;
 
 interface ResolvedTarget {
   readonly modelSelection: ModelSelection;
