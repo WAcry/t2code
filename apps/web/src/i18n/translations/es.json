@@ -7339,6 +7339,7 @@
   "efe5701992b34dfd": "recibe cambios de",
   "d2970574ef7860d0": "Copiar la rama de la {term, select, mr {merge request} cr {solicitud de cambios} other {pull request}}",
   "45c92416a82cf22c": "Nombre de la rama copiado",
+  "3b03fc47eba632b4": "{count, plural, one {{formattedCount} archivo cambiado} other {{formattedCount} archivos cambiados}}",
   "6a2b21500ebf1305": "Contraer el panel de la {term, select, mr {merge request} cr {solicitud de cambios} other {pull request}}",
   "8f60d4922d383e74": "Pestañas de {term, select, mr {merge requests} cr {solicitudes de cambios} other {pull requests}}",
   "06d834ebd2f1b69f": "No se encontró la {term, select, mr {merge request} cr {solicitud de cambios} other {pull request}} #{number}",

@@ -7346,6 +7346,7 @@
   "efe5701992b34dfd": "receives changes from",
   "d2970574ef7860d0": "Copy {term, select, mr {merge request} cr {change request} other {pull request}} branch",
   "45c92416a82cf22c": "Branch name copied",
+  "3b03fc47eba632b4": "{count, plural, one {{formattedCount} changed file} other {{formattedCount} changed files}}",
   "6a2b21500ebf1305": "Collapse {term, select, mr {merge request} cr {change request} other {pull request}} panel",
   "8f60d4922d383e74": "{term, select, mr {Merge request} cr {Change request} other {Pull request}} tabs",
   "06d834ebd2f1b69f": "{term, select, mr {Merge request} cr {Change request} other {Pull request}} #{number} not found",

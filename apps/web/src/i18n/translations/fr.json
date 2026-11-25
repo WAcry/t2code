@@ -7340,6 +7340,7 @@
   "efe5701992b34dfd": "reçoit les modifications de",
   "d2970574ef7860d0": "Copier la branche de la {term, select, mr {merge request} cr {demande de modification} other {pull request}}",
   "45c92416a82cf22c": "Nom de la branche copié",
+  "3b03fc47eba632b4": "{count, plural, one {{formattedCount} fichier modifié} other {{formattedCount} fichiers modifiés}}",
   "6a2b21500ebf1305": "Réduire le panneau de la {term, select, mr {merge request} cr {demande de modification} other {pull request}}",
   "8f60d4922d383e74": "{term, select, mr {Onglets des merge requests} cr {Onglets des demandes de modification} other {Onglets des pull requests}}",
   "06d834ebd2f1b69f": "{term, select, mr {Merge request} cr {Demande de modification} other {Pull request}} #{number} introuvable",

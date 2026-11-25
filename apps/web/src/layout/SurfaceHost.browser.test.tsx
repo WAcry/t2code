@@ -283,8 +283,9 @@ const joinOffset = (strip: HTMLElement) =>
     .style.getPropertyValue("--jx");
 const tabOffset = (strip: HTMLElement, tabId: string) => {
   const tab = strip.querySelector<HTMLElement>(`[data-layout-pane-tab="${tabId}"]`)!;
-  const left = tab.getBoundingClientRect().left - strip.getBoundingClientRect().left;
-  return `${Math.round(left + strip.scrollLeft)}px`;
+  const stripBox = strip.getBoundingClientRect();
+  const left = tab.getBoundingClientRect().left - stripBox.left;
+  return `${Math.round((left * strip.offsetWidth) / stripBox.width + strip.scrollLeft)}px`;
 };
 
 it("scrolls overflowing pane tabs from the add button without moving the workspace", async () => {

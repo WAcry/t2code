@@ -7345,6 +7345,7 @@
   "efe5701992b34dfd": "tar emot ändringar från",
   "d2970574ef7860d0": "Kopiera grenen för {term, select, mr {merge requesten} cr {ändringsbegäran} other {pull requesten}}",
   "45c92416a82cf22c": "Grennamnet kopierades",
+  "3b03fc47eba632b4": "{count, plural, one {{formattedCount} ändrad fil} other {{formattedCount} ändrade filer}}",
   "6a2b21500ebf1305": "Fäll ihop panelen för {term, select, mr {merge request} cr {ändringsbegäran} other {pull request}}",
   "8f60d4922d383e74": "Flikar för {term, select, mr {merge requests} cr {ändringsbegäranden} other {pull requests}}",
   "06d834ebd2f1b69f": "{term, select, mr {Merge request} cr {Ändringsbegäran} other {Pull request}} #{number} hittades inte",
