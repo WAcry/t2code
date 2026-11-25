@@ -523,7 +523,12 @@ jobs:
       - name: Smoke-test CLI archive
         if: inputs.cli_archive && inputs.verify_runner == ''
         shell: bash
-        run: node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "$CLI_VERSION"
+        env:
+          T2CODE_BUILD: ${{ inputs.t2code_build }}
+        run: |
+          args=()
+          if [[ "$T2CODE_BUILD" == true ]]; then args+=(--expect-telemetry-disabled); fi
+          node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "$CLI_VERSION" "${args[@]}"
 
       # macOS uploads its archive after "Await CLI notarization" instead.
       - name: Upload CLI archive
@@ -929,7 +934,12 @@ jobs:
       - name: Smoke-test CLI archive
         if: inputs.cli_archive
         shell: bash
-        run: node verify/smoke-cli-archive.mjs --archive release-cli/* --expect-version "$CLI_VERSION"
+        env:
+          T2CODE_BUILD: ${{ inputs.t2code_build }}
+        run: |
+          args=()
+          if [[ "$T2CODE_BUILD" == true ]]; then args+=(--expect-telemetry-disabled); fi
+          node verify/smoke-cli-archive.mjs --archive release-cli/* --expect-version "$CLI_VERSION" "${args[@]}"
 
       # cargo-xwin links this binary on Linux, and nothing else runs it before users do.
       # Node rather than pwsh: PowerShell on Windows ARM crashes intermittently

@@ -1,5 +1,8 @@
 # Product usage data
 
+In t2code, telemetry and diagnostics export are disabled by the fork. The settings below
+describe upstream T3 Code. [t2code telemetry policy](../../FORK.md#遥测补丁)
+
 The T3 Code server sends product usage events to T3 Code's own endpoint at `ingest.t3.codes`,
 associated with a hashed account or installation identifier. To count how many installations one person
 uses, the server also sends hashed account identifiers: your T3 Connect account, your OpenAI and

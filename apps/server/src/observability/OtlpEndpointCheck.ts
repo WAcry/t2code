@@ -7,6 +7,7 @@ import { layerOtlpSerialization } from "@t3tools/shared/observability";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import { constant } from "effect/Function";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { FetchHttpClient, HttpClient } from "effect/http";
@@ -87,3 +88,7 @@ const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(OtlpEndpointCheck, make);
+
+export const layerDisabled = Layer.succeed(OtlpEndpointCheck, {
+  check: constant(Effect.succeed({ _tag: "Unreachable", timedOut: false } as const)),
+});

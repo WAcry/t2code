@@ -22,7 +22,10 @@ export const relayLayer = (
       const config = yield* ServerConfig.ServerConfig;
       const policy = yield* ManagedPolicy.ManagedPolicy;
       return RelayTracing.layer(
-        ManagedPolicy.deniedBy(policy, "telemetry") === undefined ? tracingConfig : null,
+        !config.otelEnvironment.disabled &&
+          ManagedPolicy.deniedBy(policy, "telemetry") === undefined
+          ? tracingConfig
+          : null,
         {
           ...resource,
           serviceInstanceId: processServiceInstanceId(config.otelEnvironment.resourceAttributes),
