@@ -80,6 +80,7 @@ import {
   isSubjectOfPullRequest,
   LenientPullRequestList,
   LenientPullRequestSearch,
+  LenientPullRequestSearchWithStacks,
   pageRows,
   pullRequestLookup,
   toLabelCandidates,
@@ -365,6 +366,19 @@ const isRefusedRequestedReviewersOnly = (error: unknown): boolean =>
         path[5] === "requestedReviewer")
     );
   });
+
+const isUndefinedStackField = Schema.is(
+  Schema.Struct({
+    code: Schema.Literal("undefinedField"),
+    typeName: Schema.Literal("PullRequest"),
+    fieldName: Schema.Literals(["stack", "stackEntry"]),
+  }),
+);
+
+const isStackFieldsUnavailable = (error: unknown): boolean =>
+  isGraphQlClientError(error) &&
+  error.reason._tag === "ResponseError" &&
+  error.reason.errors.every(({ extensions }) => isUndefinedStackField(extensions));
 
 const isMissingPullRefOnly = <E>(
   error: E,
@@ -1056,7 +1070,11 @@ const GRAPHQL_MERGE_METHODS: Partial<
 
 const PullRequestGraphQLGroup = GraphQLGroup.merge(
   PullRequestBatchesGraphQLGroup,
-  GraphQLGroup.make(LenientPullRequestSearch, LenientPullRequestList),
+  GraphQLGroup.make(
+    LenientPullRequestSearch,
+    LenientPullRequestSearchWithStacks,
+    LenientPullRequestList,
+  ),
   PullRequestReadsGraphQLGroup,
   PullRequestReviewsGraphQLGroup,
   PullRequestMutationsGraphQLGroup,
@@ -1861,8 +1879,38 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  // Hosts can gain these fields after an upgrade. Remember refusals briefly and retry after expiry.
+  const hostsWithoutStackFields = yield* Cache.make({
+    capacity: 64,
+    timeToLive: "10 minutes",
+    lookup: (_host: string) => Effect.void,
+  });
+  const readWithOptionalStackFields = Effect.fn("GitHubPullRequestApi.readWithOptionalStackFields")(
+    function* <A, E, R, B, E2, R2>(
+      hostName: string,
+      readWithStacks: Effect.Effect<A, E, R>,
+      readWithoutStacks: Effect.Effect<B, E2, R2>,
+    ) {
+      const host = normalizeHost(hostName);
+      if (yield* Cache.has(hostsWithoutStackFields, host)) return yield* readWithoutStacks;
+      return yield* readWithStacks.pipe(
+        Effect.catchIf(isStackFieldsUnavailable, () =>
+          Cache.set(hostsWithoutStackFields, host, undefined).pipe(
+            Effect.andThen(readWithoutStacks),
+          ),
+        ),
+      );
+    },
+  );
+
   // Batch by host/credential; isolate missing PRs.
   const summaryResolver = GraphQLResolver.aliased(client.PullRequestSummary, {
+    batchKey: GitHubGraphQlClient.batchKey,
+  }).pipe(
+    RequestResolver.setDelay(SUMMARY_BATCH_WINDOW),
+    RequestResolver.batchN(STAT_ALIASES_PER_REQUEST),
+  );
+  const summaryWithStacksResolver = GraphQLResolver.aliased(client.PullRequestSummaryWithStacks, {
     batchKey: GitHubGraphQlClient.batchKey,
   }).pipe(
     RequestResolver.setDelay(SUMMARY_BATCH_WINDOW),
@@ -1879,9 +1927,10 @@ export const make = Effect.gen(function* () {
           operation: "getPullRequestSummary",
         });
       }
-      const result = yield* GraphQLResolver.request(
-        { ...lookup, stacks: input.host.toLowerCase() === "github.com" },
-        summaryResolver,
+      const result = yield* readWithOptionalStackFields(
+        input.host,
+        GraphQLResolver.request(lookup, summaryWithStacksResolver),
+        GraphQLResolver.request(lookup, summaryResolver),
       );
       const pullRequest = result.repository?.pullRequest;
       if (pullRequest == null) {
@@ -1962,7 +2011,6 @@ export const make = Effect.gen(function* () {
         endCursor: page.endCursor,
         pageInfo: { hasNextPage: page.endCursor !== null, endCursor: page.endCursor },
       });
-      const stacks = input.host.toLowerCase() === "github.com";
       // Search cannot exclude numbers, so the rows already delivered at the boundary come back
       // first; read past them so they do not use up the limit.
       const seenAt = new Set(input.cursor?.seenAt ?? []);
@@ -1980,7 +2028,6 @@ export const make = Effect.gen(function* () {
                   first: pageRows(rows),
                   after,
                   // Stack badges come from their own batched read below, for the rows that stay.
-                  stacks: false,
                   stats: true,
                 })
                 .pipe(Effect.map((result) => toPage(toPullRequestRows(result.search))))
@@ -1991,7 +2038,6 @@ export const make = Effect.gen(function* () {
                   states: LIST_STATES[input.state],
                   first: pageRows(rows),
                   after,
-                  stacks: false,
                   stats: true,
                 })
                 .pipe(
@@ -2037,39 +2083,40 @@ export const make = Effect.gen(function* () {
             listingServes && isGitHubServerError(error) ? read(false) : Effect.fail(error),
         }),
         Effect.filterOrElse(
-          (batch) => !stacks || batch.items.length === 0,
+          (batch) => batch.items.length === 0,
           (batch) =>
-            Effect.forEach(
-              batch.items,
-              (item) => {
-                const lookup = pullRequestLookup({
-                  repository: input.repository,
-                  number: item.number,
-                });
-                if (lookup === null) return Effect.succeed(item);
-                return GraphQLResolver.request(lookup, stackMembershipResolver).pipe(
-                  Effect.map((result) => {
-                    const pullRequest = result.repository?.pullRequest;
-                    const stack = pullRequest == null ? undefined : toStackMembership(pullRequest);
-                    return stack === undefined ? item : { ...item, stack };
-                  }),
-                  Effect.catch((error) =>
-                    Effect.logWarning("Pull request stack membership enrichment failed", {
-                      operation: "listPullRequestStackMemberships",
-                      host: input.host,
-                      error: error._tag,
-                    }).pipe(Effect.as(item)),
-                  ),
-                );
-              },
-              { concurrency: "unbounded" },
-            ).pipe(
-              Effect.provideService(GitHubGraphQlClient.GitHubGraphQlTarget, {
-                host: input.host,
-                operation: "listPullRequestStackMemberships",
-              }),
-              Effect.map((items) => ({ ...batch, items })),
-            ),
+            readWithOptionalStackFields(
+              input.host,
+              Effect.forEach(
+                batch.items,
+                (item) => {
+                  const lookup = pullRequestLookup({
+                    repository: input.repository,
+                    number: item.number,
+                  });
+                  if (lookup === null) return Effect.succeed(item);
+                  return GraphQLResolver.request(lookup, stackMembershipResolver).pipe(
+                    Effect.map((result) => {
+                      const pullRequest = result.repository?.pullRequest;
+                      const stack =
+                        pullRequest == null ? undefined : toStackMembership(pullRequest);
+                      return stack === undefined ? item : { ...item, stack };
+                    }),
+                    Effect.catchIf(
+                      (error) => !isStackFieldsUnavailable(error),
+                      (error) =>
+                        Effect.logWarning("Pull request stack membership enrichment failed", {
+                          operation: "listPullRequestStackMemberships",
+                          host: input.host,
+                          error: error._tag,
+                        }).pipe(Effect.as(item)),
+                    ),
+                  );
+                },
+                { concurrency: "unbounded" },
+              ).pipe(Effect.map((items) => ({ ...batch, items }))),
+              Effect.succeed(batch),
+            ).pipe(graphql({ ...target, operation: "listPullRequestStackMemberships" })),
         ),
       );
       // GitHub answers a private repository the token cannot see as missing, and its error names
@@ -2107,7 +2154,6 @@ export const make = Effect.gen(function* () {
           ({ repository, number }) => `${repository.trim().toLowerCase()}#${number}`,
         ),
       );
-      const stacks = input.host.toLowerCase() === "github.com";
       let endedShort = false;
       const {
         items: rawItems,
@@ -2115,25 +2161,29 @@ export const make = Effect.gen(function* () {
         truncated,
       } = yield* collect(
         Math.min(input.limit + 1, PULL_REQUEST_SEARCH_MAX_ROWS) + seenAt.size,
-        (after, rows) =>
-          client
-            .PullRequestSearch({ q: query, first: pageRows(rows), after, stacks, stats: false })
-            .pipe(
-              graphql({ ...input, operation: "searchPullRequests" }),
-              Effect.map(({ search }) => {
-                const page = toPullRequestRows(search);
-                // A short page that says it has more is where this read stops, not a gap to read past.
-                const short = page.endCursor !== null && page.rawCount < pageRows(rows);
-                if (short) endedShort = true;
-                return {
-                  items: page.rows.flatMap(({ item, repository }) =>
-                    repository === null ? [] : [{ ...item, repository }],
-                  ),
-                  rawCount: page.rawCount,
-                  endCursor: short ? null : page.endCursor,
-                };
-              }),
-            ),
+        (after, rows) => {
+          const variables = { q: query, first: pageRows(rows), after, stats: false };
+          return readWithOptionalStackFields(
+            input.host,
+            client.PullRequestSearchWithStacks(variables),
+            client.PullRequestSearch(variables),
+          ).pipe(
+            graphql({ ...input, operation: "searchPullRequests" }),
+            Effect.map(({ search }) => {
+              const page = toPullRequestRows(search);
+              // A short page that says it has more is where this read stops, not a gap to read past.
+              const short = page.endCursor !== null && page.rawCount < pageRows(rows);
+              if (short) endedShort = true;
+              return {
+                items: page.rows.flatMap(({ item, repository }) =>
+                  repository === null ? [] : [{ ...item, repository }],
+                ),
+                rawCount: page.rawCount,
+                endCursor: short ? null : page.endCursor,
+              };
+            }),
+          );
+        },
       );
       const items = rawItems.filter(
         (item) =>
