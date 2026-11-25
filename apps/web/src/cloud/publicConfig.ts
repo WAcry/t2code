@@ -61,13 +61,10 @@ export function resolveCloudPublicConfig(): CloudPublicConfig {
   };
 }
 
-let desktopRelayTelemetry: boolean | null = null;
+export const WEB_TELEMETRY_ENABLED = false;
 
-/** Whether relay spans may be exported now; the desktop host may not know yet at startup. */
-export function relayTelemetryEnabled(): boolean | null {
-  if (typeof window === "undefined" || !window.desktopBridge) return true;
-  desktopRelayTelemetry ??= window.desktopBridge.getRelayTelemetryEnabled();
-  return desktopRelayTelemetry;
+export function relayTelemetryEnabled(): boolean {
+  return WEB_TELEMETRY_ENABLED;
 }
 
 export function resolveRelayTracingConfig() {

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { cliArchiveTarCommand, newestCliReleaseVersion, parseChecksums } from "./cliRelease.ts";
+import {
+  cliArchiveTarCommand,
+  cliReleaseAssetUrl,
+  newestCliReleaseVersion,
+  parseChecksums,
+} from "./cliRelease.ts";
 
 describe("cliRelease", () => {
   it("parses sha256sum output including binary-mode markers", () => {
@@ -23,6 +28,17 @@ describe("cliRelease", () => {
       "D:\\Win\\System32\\tar.exe",
     );
     expect(cliArchiveTarCommand("win32", {})).toBe("C:\\Windows\\System32\\tar.exe");
+  });
+
+  it("downloads fork archives and checksums from the fork release", () => {
+    const version = "0.1.12-nightly.20261123.5165-pr28845.4";
+    const file = `t3-${version}-linux-x64.tar.gz`;
+    expect(cliReleaseAssetUrl(version, file)).toBe(
+      `https://github.com/WAcry/t2code/releases/download/v${version}/${file}`,
+    );
+    expect(cliReleaseAssetUrl(version, "SHA256SUMS", "https://example.com/upstream-mirror")).toBe(
+      `https://github.com/WAcry/t2code/releases/download/v${version}/SHA256SUMS`,
+    );
   });
 
   it("picks the newest non-draft release on the requested channel", () => {

@@ -86,9 +86,12 @@ export class DesktopEnvironment extends Context.Service<
 >()("@t3tools/desktop/app/DesktopEnvironment") {}
 
 declare const __T3CODE_T2CODE_BUILD__: boolean | undefined;
+declare const __T3CODE_FORK_RELEASE_VERSION__: string | undefined;
 
 export const IS_T2CODE_BUILD =
   typeof __T3CODE_T2CODE_BUILD__ !== "undefined" && __T3CODE_T2CODE_BUILD__;
+export const T2CODE_FORK_RELEASE_VERSION =
+  typeof __T3CODE_FORK_RELEASE_VERSION__ === "undefined" ? "" : __T3CODE_FORK_RELEASE_VERSION__;
 const APP_BASE_NAME = IS_T2CODE_BUILD ? "t2code" : "T3 Code";
 
 function resolveDesktopAppStageLabel(input: {

@@ -61,6 +61,7 @@ function runningOverride(
 type EndpointCheck = { readonly url: string; readonly result: OtlpEndpointCheckResult | null };
 
 const isHttpUrl = (url: string) => /^https?:\/\/./i.test(url);
+const exportDisabledLabel = msg("Off", { $context: "export disabled" });
 
 function endpointStatus(
   url: string,
@@ -69,7 +70,7 @@ function endpointStatus(
 ) {
   if (url === "") {
     return {
-      label: resolve(msg("Off", { $context: "export disabled" })),
+      label: resolve(exportDisabledLabel),
       tone: "neutral",
     } as const;
   }
@@ -99,7 +100,17 @@ function endpointStatus(
 
 export function TelemetryExportSettings() {
   const gt = useGT();
+  const messages = useMessages();
   const { environment, scope } = useSettingsScope();
+  if (environment?.serverConfig?.environment.capabilities.otlpEndpointCheck === false) {
+    return (
+      <SettingsSection title={gt("OpenTelemetry export")} id="telemetry-export">
+        <p className="text-meta px-4 py-4 text-muted-foreground sm:px-5">
+          {messages(exportDisabledLabel)}
+        </p>
+      </SettingsSection>
+    );
+  }
   if (scope.kind !== "environment" || !environment) {
     return (
       <SettingsSection title={gt("OpenTelemetry export")} id="telemetry-export">

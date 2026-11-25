@@ -3860,7 +3860,7 @@ export const layer = Layer.unwrap(
               Layer.provide(
                 Layer.succeed(IssueTrackerConnections.IssueTrackerConnections, issueTrackers),
               ),
-              Layer.provide(OtlpEndpointCheck.layer),
+              Layer.provide(OtlpEndpointCheck.layerDisabled),
               Layer.provide(
                 Layer.succeed(
                   PullRequestReviewGuideService.PullRequestReviewGuideService,

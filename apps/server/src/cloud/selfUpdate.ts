@@ -22,8 +22,10 @@ import { HttpClient } from "effect/http";
 
 import {
   CLI_RELEASE_BASE_URL_ENV,
+  FORK_CLI_RELEASES_PAGE_URL,
   cliReleaseChannelOf,
   crossesReleaseTrack,
+  isForkCliReleaseVersion,
 } from "@t3tools/shared/cliRelease";
 
 import packageJson from "../../package.json" with { type: "json" };
@@ -49,6 +51,7 @@ export function resolveServerSelfUpdateCapability(input: {
   readonly desktopManaged: boolean;
   readonly launcherManaged: boolean;
 }): ServerSelfUpdateCapability | null {
+  if (isForkCliReleaseVersion(packageJson.version)) return null;
   if (input.desktopManaged) return "desktop-managed" as const;
   return input.launcherManaged ? ("boot-service" as const) : null;
 }
@@ -154,8 +157,10 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
     Effect.forkScoped,
   );
 
-  const capability: ServerSelfUpdateCapability | null =
-    serverConfig.mode === "desktop" ? "desktop-managed" : launcher.managed ? "boot-service" : null;
+  const capability = resolveServerSelfUpdateCapability({
+    desktopManaged: serverConfig.mode === "desktop",
+    launcherManaged: launcher.managed,
+  });
   const failWith = (reason: string, cause?: unknown) =>
     cause === undefined
       ? new ServerSelfUpdateError({ reason })
@@ -172,6 +177,11 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
   const update: ServerSelfUpdate["Service"]["update"] = Effect.fn(
     "cloud.server_self_update.update",
   )(function* (input, reportProgress = () => Effect.void, onHandoffAccepted = () => Effect.void) {
+    if (isForkCliReleaseVersion(packageJson.version)) {
+      return yield* failWith(
+        `Install new t2code releases manually from ${FORK_CLI_RELEASES_PAGE_URL}.`,
+      );
+    }
     const policyRefusal = managedUpdateRefusal(
       policy.document,
       capability === "boot-service" ? cliReleaseChannelOf(input.targetVersion.trim()) : undefined,

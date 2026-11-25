@@ -2,8 +2,10 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
   CLI_RELEASE_BASE_URL_ENV,
   CLI_RELEASE_CHANNELS,
+  FORK_CLI_RELEASES_PAGE_URL,
   cliReleaseIndexPageUrl,
   cliReleaseChannelOf,
+  isForkCliReleaseVersion,
   newestCliReleaseVersion,
   releaseAssetUrl,
   updateFeedFileName,
@@ -360,6 +362,12 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   readonly allowDowngrade: boolean;
   readonly assumeYes: boolean;
 }) {
+  const currentVersion = packageJson.version;
+  if (isForkCliReleaseVersion(currentVersion)) {
+    return yield* new CliUpdateError({
+      reason: `Install new t2code releases manually from ${FORK_CLI_RELEASES_PAGE_URL}.`,
+    });
+  }
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const runner = yield* ProcessRunner.ProcessRunner;
@@ -371,7 +379,6 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   const policy = yield* ManagedPolicy.ManagedPolicy;
   const mirror = managedUpdateMirror(policy.document);
 
-  const currentVersion = packageJson.version;
   const channel = input.channel ?? cliReleaseChannelOf(currentVersion);
   const refusal = managedUpdateRefusal(
     policy.document,

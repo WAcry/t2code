@@ -962,6 +962,7 @@ interface ResolvedBuildOptions {
   readonly mockUpdates: boolean;
   readonly mockUpdateServerPort: number | undefined;
   readonly wslRuntime: string | undefined;
+  readonly forkReleaseVersion: string | undefined;
 }
 
 interface StagePackageJson {
@@ -1668,6 +1669,7 @@ const BuildEnvConfig = Config.all({
   mockUpdates: Config.Boolean("T3CODE_DESKTOP_MOCK_UPDATES").pipe(Config.withDefault(false)),
   mockUpdateServerPort: Config.String("T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT").pipe(Config.option),
   wslRuntime: Config.String("T3CODE_DESKTOP_WSL_RUNTIME").pipe(Config.option),
+  forkReleaseVersion: Config.String("T3CODE_FORK_RELEASE_VERSION").pipe(Config.withDefault("")),
 });
 
 const MockUpdateServerPortSchema = Schema.NumberFromString.check(
@@ -1776,6 +1778,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     mockUpdates,
     mockUpdateServerPort,
     wslRuntime,
+    forkReleaseVersion: env.forkReleaseVersion.trim() || undefined,
   } satisfies ResolvedBuildOptions;
 });
 
@@ -3409,6 +3412,7 @@ export const validateWindowsPackagedPayload = Effect.fn(
   readonly appExecutableName: string;
   readonly targetArch: typeof BuildArch.Type;
   readonly appVersion: string;
+  readonly wslRuntimeVersion?: string;
   readonly expectWslRuntime?: boolean;
   readonly fileLimit?: number;
   readonly verbose?: boolean;
@@ -3568,7 +3572,10 @@ export const validateWindowsPackagedPayload = Effect.fn(
     }
     const members = parseWslRuntimeArchiveMembers(listing.stdout);
     // The WSL installer finds t3 under the archive's single stem-named directory.
-    const stem = wslRuntimeArchiveStem(input.appVersion, input.targetArch);
+    const stem = wslRuntimeArchiveStem(
+      input.wslRuntimeVersion ?? input.appVersion,
+      input.targetArch,
+    );
     const topLevel = new Set(members.map((member) => member.split("/")[0]));
     if (topLevel.size !== 1 || !topLevel.has(stem)) {
       return yield* invalidWslRuntime(
@@ -4202,6 +4209,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
       appExecutableName: `${resolveDesktopProductName(appVersion, options.t2codeBuild)}.exe`,
       targetArch: options.arch,
       appVersion,
+      ...(options.forkReleaseVersion ? { wslRuntimeVersion: options.forkReleaseVersion } : {}),
       expectWslRuntime: bundlesWslRuntime({
         platform: options.platform,
         runtimeArchivePath: options.wslRuntime,

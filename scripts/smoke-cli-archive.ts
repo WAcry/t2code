@@ -1,6 +1,8 @@
 #!/usr/bin/env node
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -16,8 +18,17 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as NetService from "@t3tools/shared/Net";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { FORK_CLI_RELEASES_PAGE_URL } from "@t3tools/shared/cliRelease";
 import { windowsSystemTar } from "./lib/windows-tar.ts";
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
+import {
+  FetchHttpClient,
+  HttpClient,
+  HttpClientRequest,
+  HttpClientResponse,
+  HttpServer,
+  HttpServerRequest,
+  HttpServerResponse,
+} from "effect/http";
 
 export class CliArchiveSmokeError extends Schema.TaggedError<CliArchiveSmokeError>()(
   "CliArchiveSmokeError",
@@ -58,9 +69,31 @@ const runExecutable = Effect.fn("runExecutable")(function* (
   return { stdout, stderr, exitCode };
 });
 
+const makeTelemetryReceiver = Effect.fn("makeTelemetryReceiver")(function* () {
+  const services = yield* Layer.build(NodeHttpServer.layerTest);
+  const server = Context.get(services, HttpServer.HttpServer);
+  const requests: string[] = [];
+  yield* server.serve(
+    Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      if (request.method === "POST") requests.push(request.url);
+      return HttpServerResponse.empty({ status: 200 });
+    }),
+  );
+  return { url: HttpServer.formatAddress(server.address), requests };
+});
+
+const disabledTelemetryCapabilities = Schema.Struct({
+  capabilities: Schema.Struct({
+    otlpEndpointCheck: Schema.Literal(false),
+    agentFeedback: Schema.Literal(false),
+  }),
+});
+
 const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
   readonly archive: string;
   readonly expectVersion: string;
+  readonly expectTelemetryDisabled: boolean;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -128,7 +161,7 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
   }
 
   const version = yield* runExecutable(executable, ["--version"], contentDir);
-  if (version.exitCode !== 0 || !version.stdout.includes(input.expectVersion)) {
+  if (version.exitCode !== 0 || version.stdout.trim() !== `t3 v${input.expectVersion}`) {
     return yield* new CliArchiveSmokeError({
       step: "running --version",
       detail: `exit ${String(version.exitCode)}\n${version.stdout}${version.stderr}`,
@@ -143,10 +176,30 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
       detail: `exit ${String(launcher.exitCode)}\n${launcher.stdout}${launcher.stderr}`,
     });
   }
+  if (input.expectTelemetryDisabled) {
+    const update = yield* runExecutable(executable, ["update"], contentDir);
+    if (
+      update.exitCode === 0 ||
+      !`${update.stdout}${update.stderr}`.includes(FORK_CLI_RELEASES_PAGE_URL)
+    ) {
+      return yield* new CliArchiveSmokeError({
+        step: "checking that updates stay on the fork",
+        detail: `exit ${String(update.exitCode)}\n${update.stdout}${update.stderr}`,
+      });
+    }
+  }
 
   const net = yield* NetService.NetService;
   const port = yield* net.findAvailablePort(47700);
   const home = path.join(scratch, "home");
+  const receiver = input.expectTelemetryDisabled ? yield* makeTelemetryReceiver() : undefined;
+  const httpClient = yield* HttpClient.HttpClient;
+  if (receiver && (yield* httpClient.get(receiver.url)).status !== 200) {
+    return yield* new CliArchiveSmokeError({
+      step: "starting the loopback telemetry receiver",
+      detail: "no 200 from the receiver",
+    });
+  }
   const server = yield* spawner.spawn(
     ChildProcess.make(
       executable,
@@ -160,9 +213,19 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
           TMPDIR: scratch,
           TEMP: scratch,
           T3CODE_HOME: home,
-          // The archive has a release channel built in, so its events would
-          // look like a real new install.
-          T3CODE_TELEMETRY_ENABLED: "false",
+          ...(receiver
+            ? {
+                T3CODE_TELEMETRY_ENABLED: "true",
+                T3CODE_POSTHOG_HOST: receiver.url,
+                T3CODE_TELEMETRY_FLUSH_BATCH_SIZE: "1",
+                T3CODE_OTEL_SDK_DISABLED: "false",
+                OTEL_SDK_DISABLED: "false",
+                OTEL_EXPORTER_OTLP_ENDPOINT: receiver.url,
+                OTEL_METRIC_EXPORT_INTERVAL: "1000",
+                OTEL_BSP_SCHEDULE_DELAY: "1000",
+                OTEL_BLRP_SCHEDULE_DELAY: "1000",
+              }
+            : { T3CODE_TELEMETRY_ENABLED: "false" }),
         },
         extendEnv: false,
       },
@@ -171,7 +234,6 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
   const output = yield* Effect.forkScoped(
     Effect.all([collect(server.stdout), collect(server.stderr)]),
   );
-  const httpClient = yield* HttpClient.HttpClient;
   // Probes can hang during server initialization; bound each request as SSH readiness does.
   const probe = httpClient.execute(HttpClientRequest.get(`http://127.0.0.1:${String(port)}/`)).pipe(
     Effect.map((response) => response.status === 200),
@@ -184,10 +246,24 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
     }
     return true;
   });
-  const ready = yield* pollUntilReady.pipe(
+  let ready = yield* pollUntilReady.pipe(
     Effect.timeout(Duration.seconds(30)),
     Effect.orElseSucceed(() => false),
   );
+  if (ready && receiver) {
+    // Cover the product event buffer's ten-second periodic flush as well as exporter startup.
+    yield* Effect.sleep(Duration.seconds(12));
+    ready = yield* probe;
+  }
+  const telemetryCapabilitiesDisabled =
+    !receiver ||
+    (ready &&
+      (yield* httpClient.get(`http://127.0.0.1:${String(port)}/.well-known/t3/environment`).pipe(
+        Effect.flatMap(HttpClientResponse.schemaBodyJson(disabledTelemetryCapabilities)),
+        Effect.as(true),
+        Effect.timeout(Duration.seconds(2)),
+        Effect.orElseSucceed(() => false),
+      )));
   yield* server.kill({ killSignal: "SIGTERM" }).pipe(Effect.ignore);
   yield* server.exitCode.pipe(Effect.timeout(Duration.seconds(10)), Effect.ignore);
   const [stdout, stderr] = yield* Fiber.join(output).pipe(
@@ -200,6 +276,21 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
       detail: `no 200 from / within 30s\n${stdout}${stderr}`,
     });
   }
+  if (receiver) {
+    if (!telemetryCapabilitiesDisabled) {
+      return yield* new CliArchiveSmokeError({
+        step: "checking advertised telemetry capabilities",
+        detail: "the server did not report feedback and OTLP endpoint checks as disabled",
+      });
+    }
+    if (receiver.requests.length > 0) {
+      return yield* new CliArchiveSmokeError({
+        step: "checking forced telemetry disablement",
+        detail: `unexpected requests to the loopback telemetry receiver: ${receiver.requests.join(", ")}`,
+      });
+    }
+    yield* Effect.log("[cli-smoke] No telemetry sent with product events and OTLP configured.");
+  }
   yield* Effect.log(
     `[cli-smoke] ${root}: --version and __service-launcher passed, and serve answered on ${String(port)}.`,
   );
@@ -210,6 +301,7 @@ const command = Command.make(
   {
     archive: Flag.String("archive"),
     expectVersion: Flag.String("expect-version"),
+    expectTelemetryDisabled: Flag.Boolean("expect-telemetry-disabled"),
   },
   (input) => smokeCliArchive(input).pipe(Effect.scoped),
 ).pipe(Command.withDescription("Extract a CLI archive and run its executable."));

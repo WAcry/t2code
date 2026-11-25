@@ -130,3 +130,30 @@ diff --git a/ios/ClerkNativeViewHost.swift b/ios/ClerkNativeViewHost.swift
 +  }
 +  return nil
 +}
+diff --git a/android/src/main/java/expo/modules/clerk/ClerkExpoModule.kt b/android/src/main/java/expo/modules/clerk/ClerkExpoModule.kt
+--- a/android/src/main/java/expo/modules/clerk/ClerkExpoModule.kt
++++ b/android/src/main/java/expo/modules/clerk/ClerkExpoModule.kt
+@@ -118,2 +118,5 @@
+-        val options = ClerkConfigurationOptions(proxyUrl = proxyUrl).withForegroundRefreshDisabled()
++        val options = ClerkConfigurationOptions(
++            proxyUrl = proxyUrl,
++            telemetryEnabled = false,
++        ).withForegroundRefreshDisabled()
+         return (if (updateRequiredViewEnabled) options else options.withUpdateRequiredViewDisabled())
+diff --git a/ios/ClerkNativeBridge.swift b/ios/ClerkNativeBridge.swift
+--- a/ios/ClerkNativeBridge.swift
++++ b/ios/ClerkNativeBridge.swift
+@@ -675,6 +675,12 @@
+     guard let service = keychainService else {
+-      return .init(proxyUrl: proxyUrl, middleware: middleware, updateRequiredViewEnabled: updateRequiredViewEnabled)
++      return .init(
++        telemetryEnabled: false,
++        proxyUrl: proxyUrl,
++        middleware: middleware,
++        updateRequiredViewEnabled: updateRequiredViewEnabled
++      )
+     }
+     return .init(
++      telemetryEnabled: false,
+       keychainConfig: .init(service: service),
+       proxyUrl: proxyUrl,

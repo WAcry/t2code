@@ -141,6 +141,7 @@ const makeWindowsPayloadFixture = Effect.fn("test.makeWindowsPayloadFixture")(fu
   readonly copyUnpackedNatives: boolean;
   readonly serverEntrySource?: string;
   readonly wslRuntime?: "valid" | "loose-server-tree" | "missing-pty" | "bad-digest";
+  readonly wslRuntimeVersion?: string;
   readonly targetArch?: "x64" | "arm64";
   readonly ptyPrebuildArch?: "x64" | "arm64";
 }) {
@@ -180,7 +181,10 @@ const makeWindowsPayloadFixture = Effect.fn("test.makeWindowsPayloadFixture")(fu
   yield* fs.writeFileString(path.join(packagedAppDir, "chrome_crashpad_handler.exe"), "crashpad");
 
   if (input.wslRuntime !== undefined) {
-    const stem = wslRuntimeArchiveStem(WINDOWS_PAYLOAD_FIXTURE_VERSION, input.targetArch ?? "x64");
+    const stem = wslRuntimeArchiveStem(
+      input.wslRuntimeVersion ?? WINDOWS_PAYLOAD_FIXTURE_VERSION,
+      input.targetArch ?? "x64",
+    );
     const sourceArchivePath =
       input.wslRuntime === "loose-server-tree"
         ? yield* makeLinuxCliArchiveFixture({
@@ -1153,6 +1157,29 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         assert.equal(error.reason, "wsl-runtime-invalid");
       }),
     ),
+  );
+
+  it.effect("accepts the expected fork runtime version with an upstream desktop version", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const wslRuntimeVersion = "0.1.12-nightly.20261123.5165-pr28845.4";
+        const fixture = yield* makeWindowsPayloadFixture({
+          copyUnpackedNatives: true,
+          wslRuntime: "valid",
+          wslRuntimeVersion,
+        });
+        const result = yield* validateWindowsPackagedPayload({
+          stageDistDir: fixture.stageDistDir,
+          appExecutableName: fixture.appExecutableName,
+          targetArch: "x64",
+          appVersion: WINDOWS_PAYLOAD_FIXTURE_VERSION,
+          wslRuntimeVersion,
+          expectWslRuntime: true,
+        });
+
+        assert.equal(result.packagedAppDir, fixture.packagedAppDir);
+      }),
+    ).pipe(Effect.provideService(HostProcess.Platform, "linux")),
   );
 
   it.effect("rejects a Windows package missing its expected WSL runtime", () =>

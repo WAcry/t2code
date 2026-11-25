@@ -37,6 +37,7 @@ import { resolvePastedPath } from "@t3tools/shared/path";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
+import { WEB_TELEMETRY_ENABLED } from "../../cloud/publicConfig";
 import { AboutVersionTitle } from "./AboutVersionTitle";
 import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
 import { MobileAppSettingsRow } from "./MobileAppSettingsRow";
@@ -2560,7 +2561,9 @@ export function AboutSettingsPanel() {
   const primaryPolicy = usePrimaryManagedPolicy();
   // The Welcome page sets up this computer, so it needs one.
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const telemetryOff = managedTelemetryOffMessage(primaryPolicy, messages);
+  const telemetryOff = WEB_TELEMETRY_ENABLED
+    ? managedTelemetryOffMessage(primaryPolicy, messages)
+    : messages(msg("{organization} turned off anonymous usage data.", { organization: "t2code" }));
   return (
     <SettingsPageContainer>
       <SettingsSection id="about" title={gt("App")}>

@@ -68,6 +68,19 @@ function setup() {
 }
 
 describe("TelemetryExportSettings", () => {
+  it("shows exports as off when the server disables the capability", async () => {
+    setup();
+    state.observability = {
+      ...DEFAULT_SERVER_SETTINGS.observability,
+      otlpTracesUrl: "http://saved/v1/traces",
+    };
+    state.serverConfig = { environment: { capabilities: { otlpEndpointCheck: false } } };
+    await using screen = await render(<TelemetryExportSettings />);
+    await expect.element(screen.getByText("Off")).toBeVisible();
+    await expect.element(screen.getByLabelText("Traces endpoint")).not.toBeInTheDocument();
+    expect(checkOtlpEndpoint).not.toHaveBeenCalled();
+  });
+
   it("does not resend a field the user restored after another client changed it", async () => {
     setup();
     state.observability = {

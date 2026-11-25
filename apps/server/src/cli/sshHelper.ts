@@ -5,6 +5,7 @@ import * as NodeFS from "node:fs";
 import * as NodeHttp from "node:http";
 import * as NodeNet from "node:net";
 
+import { isForkCliReleaseVersion } from "@t3tools/shared/cliRelease";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -148,6 +149,7 @@ export const keepsRunningServer = (runtimeJson: string, pid: number, ownVersion:
     onSome: (runtime) =>
       runtime.pid === pid &&
       isExactServiceVersion(runtime.serverVersion) &&
+      (!isForkCliReleaseVersion(ownVersion) || isForkCliReleaseVersion(runtime.serverVersion)) &&
       compareExactServiceVersions(runtime.serverVersion, ownVersion) >= 0,
   });
 

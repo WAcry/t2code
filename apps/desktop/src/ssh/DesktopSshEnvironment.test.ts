@@ -44,4 +44,20 @@ describe("resolveDesktopSshCliRunner", () => {
       });
     }),
   );
+
+  it.effect("pins the fork CLI version and download source for the remote runner", () =>
+    Effect.gen(function* () {
+      const environment = yield* packagedEnvironment;
+      const runner = resolveDesktopSshCliRunner(
+        environment,
+        { [CLI_RELEASE_BASE_URL_ENV]: "https://example.com/upstream-mirror" },
+        "0.1.12-nightly.20261123.5165-pr28845.4",
+      );
+
+      assert.deepStrictEqual(runner, {
+        archiveVersion: "0.1.12-nightly.20261123.5165-pr28845.4",
+        releaseBaseUrl: "https://github.com/WAcry/t2code/releases/download",
+      });
+    }),
+  );
 });

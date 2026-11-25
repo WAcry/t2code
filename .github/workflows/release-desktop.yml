@@ -131,11 +131,16 @@ on:
         required: false
         default: false
         type: boolean
+      fork_release_version:
+        required: false
+        type: string
 
 # electron-builder leaves the default arch (x64) out of the unpacked app's
 # directory name.
 env:
   UNPACKED_DIR: ${{ inputs.platform }}-${{ inputs.arch != 'x64' && format('{0}-', inputs.arch) || '' }}unpacked
+  T3CODE_FORK_RELEASE_VERSION: ${{ inputs.fork_release_version }}
+  CLI_VERSION: ${{ inputs.fork_release_version || inputs.version }}
 
 permissions:
   # Windows builds read this run's artifact list to wait for the Linux CLI archive.
@@ -510,7 +515,7 @@ jobs:
           node scripts/build-cli-archive.ts \
             --platform "${{ inputs.platform }}" \
             --arch "${{ inputs.arch }}" \
-            --version "${{ inputs.version }}" \
+            --version "$CLI_VERSION" \
             --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" \
             --output-dir release-cli \
             ${extra_args[@]+"${extra_args[@]}"}
@@ -518,7 +523,12 @@ jobs:
       - name: Smoke-test CLI archive
         if: inputs.cli_archive && inputs.verify_runner == ''
         shell: bash
-        run: node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "${{ inputs.version }}"
+        env:
+          T2CODE_BUILD: ${{ inputs.t2code_build }}
+        run: |
+          args=()
+          if [[ "$T2CODE_BUILD" == true ]]; then args+=(--expect-telemetry-disabled); fi
+          node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "$CLI_VERSION" "${args[@]}"
 
       # macOS uploads its archive after "Await CLI notarization" instead.
       - name: Upload CLI archive
@@ -924,7 +934,12 @@ jobs:
       - name: Smoke-test CLI archive
         if: inputs.cli_archive
         shell: bash
-        run: node verify/smoke-cli-archive.mjs --archive release-cli/* --expect-version "${{ inputs.version }}"
+        env:
+          T2CODE_BUILD: ${{ inputs.t2code_build }}
+        run: |
+          args=()
+          if [[ "$T2CODE_BUILD" == true ]]; then args+=(--expect-telemetry-disabled); fi
+          node verify/smoke-cli-archive.mjs --archive release-cli/* --expect-version "$CLI_VERSION" "${args[@]}"
 
       # cargo-xwin links this binary on Linux, and nothing else runs it before users do.
       # Node rather than pwsh: PowerShell on Windows ARM crashes intermittently

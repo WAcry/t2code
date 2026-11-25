@@ -27,7 +27,7 @@ node scripts/prepare-fork-nightly.mjs --pr $reviewedPr
 
 ## 发布公开安装包
 
-公开安装包显示 t2code 名称，沿用上游 nightly 的内部应用 ID、版本号、配置和数据目录。内置桌面更新已关闭。新版本可从本仓库下载后手动安装。公开构建支持 Windows 和 Linux x64/arm64，以及 Intel macOS。GitHub 预发布同时提供安装包、`SHA256SUMS` 和源码归档。 [Fork 发布页](https://github.com/WAcry/t2code/releases)
+公开安装包显示 t2code 名称，沿用上游 nightly 的桌面应用 ID、版本号、配置和数据目录。桌面自动更新已关闭。新版本可从本仓库下载后手动安装。桌面包支持 Windows、Linux 和 macOS 的 x64/arm64。GitHub 预发布同时提供独立服务端、`SHA256SUMS` 和源码归档。 [Fork 发布页](https://github.com/WAcry/t2code/releases)
 
 将候选分支推送到 fork，由 `Fork nightly` 工作流构建。若工作流处于手动禁用状态，先在 GitHub Actions 中启用。 [构建记录](https://github.com/WAcry/t2code/actions/workflows/fork-nightly.yml)
 
@@ -56,6 +56,22 @@ gh workflow run fork-nightly.yml --repo WAcry/t2code --ref main -f publish=true 
 公开发布工作流通过 `T3CODE_T2CODE_BUILD` 启用独立名称和图标。图标集中在 `assets/t2code/`，桌面打包和 Web 构建各自读取这套资源。同步上游时，保留发布工作流的开关和对应的品牌入口即可。
 
 以前安装的分栏版仍带有官方更新源。换装带此开关的新构建前，可以从设有 `T3CODE_DISABLE_AUTO_UPDATE=true` 的终端启动旧版来关闭该次运行的更新。
+
+## 在远端运行服务端
+
+独立服务端文件名以 `t3-` 开头，版本号对应 fork 发布标签去掉开头的 `v`。选择 Linux 或 Windows 的 x64/arm64 包，或 Apple Silicon 的 macOS arm64 包。用同一发布的 `SHA256SUMS` 校验，整目录解压后运行其中的 `t3 serve`（Windows 为 `t3.exe serve`）。包自带运行时和 Web 客户端。[下载页](https://github.com/WAcry/t2code/releases)
+
+升级自管主机时，保留原启动参数、账户和 `T3CODE_HOME`，将启动命令指向新解压目录的可执行文件，再重启原进程。若使用 `t3 service`，可用新版本的可执行文件运行 `service install` 更新已注册的后台服务。更新会中断运行中的任务和远端连接。用新二进制的 `--version` 和后台服务的 `service status` 核对 fork 版本。
+
+桌面自动部署的 SSH 运行时从本仓库下载匹配版本，Windows 上的 WSL 使用同版本的内嵌 Linux 包。接入已自行启动的服务器时，先在对应主机升级运行中的服务，再重新连接。独立 fork 版本的 `t3 update` 会指向本仓库的下载页，升级时手动选择新包。
+
+## 遥测补丁
+
+**t2code 强制关闭项目自身的遥测。** 桌面和服务端均关闭产品使用统计、代理反馈、T3 Connect 客户端链路追踪以及 OTLP 日志、指标和追踪导出。设置文件里的旧值和 `T3CODE_TELEMETRY_ENABLED=true` 等环境变量无法开启发送。Web 客户端关闭自己的追踪与统计身份上报，移动端源码关闭崩溃和启动上报。
+
+本地诊断日志仍可用于排查问题。模型请求、授权和远端连接仍按各自的协议运行。独立运行的模型提供商 CLI、官方客户端和官方托管服务有各自的遥测规则。
+
+同步上游时要沿生产入口核对发送端，包括 Electron 主进程、桌面启动的服务端、独立 CLI 和浏览器客户端。回归检查应覆盖旧设置、显式环境变量、手动测试 OTLP 连接，以及 SSH 引导和 WSL 更新是否都启动此 fork 的运行时。发布 CI 会实际启动解压出的独立服务端，预置开启遥测的环境变量，并检查本地收集端点的请求。
 
 ## 对话上下文补丁
 
