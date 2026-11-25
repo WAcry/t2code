@@ -14,6 +14,7 @@ const commitPattern = /^[0-9a-f]{40}$/;
 
 const forkPaths = new Set([
   manifestPath,
+  ".github/workflows/ci.yml",
   ".github/workflows/fork-nightly.yml",
   ".github/workflows/release-desktop.yml",
   "apps/desktop/src/app/DesktopAppIdentity.ts",

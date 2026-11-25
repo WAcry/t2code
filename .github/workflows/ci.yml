@@ -22,7 +22,8 @@ jobs:
   # open: if the diff cannot be resolved, everything runs.
   changes:
     name: Changes
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    # Use GitHub-hosted runners in the t2code fork, including after a repository rename.
+    runs-on: ${{ github.repository_id == '1469130764' && 'ubuntu-24.04' || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 5
     outputs:
       typecheck: ${{ steps.detect.outputs.typecheck }}
@@ -64,8 +65,8 @@ jobs:
       contents: read
       id-token: write
     name: Lint
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 10
+    runs-on: ${{ github.repository_id == '1469130764' && 'ubuntu-24.04' || 'blacksmith-8vcpu-ubuntu-2404' }}
+    timeout-minutes: ${{ github.repository_id == '1469130764' && 30 || 10 }}
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -126,8 +127,8 @@ jobs:
     name: Build and Typecheck
     needs: changes
     if: ${{ !cancelled() && (needs.changes.outputs.build != 'false' || needs.changes.outputs.typecheck != 'false') }}
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 10
+    runs-on: ${{ github.repository_id == '1469130764' && 'ubuntu-24.04' || 'blacksmith-8vcpu-ubuntu-2404' }}
+    timeout-minutes: ${{ github.repository_id == '1469130764' && 30 || 10 }}
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -288,8 +289,8 @@ jobs:
     name: Test
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.test != 'false' }}
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 10
+    runs-on: ${{ github.repository_id == '1469130764' && 'ubuntu-24.04' || 'blacksmith-8vcpu-ubuntu-2404' }}
+    timeout-minutes: ${{ github.repository_id == '1469130764' && 30 || 10 }}
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -378,8 +379,8 @@ jobs:
     name: Test Web ${{ matrix.shard }}
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.test_web != 'false' }}
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 10
+    runs-on: ${{ github.repository_id == '1469130764' && 'ubuntu-24.04' || 'blacksmith-8vcpu-ubuntu-2404' }}
+    timeout-minutes: ${{ github.repository_id == '1469130764' && 30 || 10 }}
     strategy:
       fail-fast: false
       matrix:
@@ -440,10 +441,10 @@ jobs:
       contents: read
       id-token: write
     name: Test Server ${{ matrix.shard }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ github.repository_id == '1469130764' && 'ubuntu-24.04' || 'blacksmith-4vcpu-ubuntu-2404' }}
     # Shards take 2-5 minutes. When the shared task cache throttles reads, each
     # failed fetch stalls vp for 15-90s, which pushed shards past 10 minutes.
-    timeout-minutes: 20
+    timeout-minutes: ${{ github.repository_id == '1469130764' && 40 || 20 }}
     strategy:
       fail-fast: false
       matrix:
@@ -570,8 +571,8 @@ jobs:
     name: Rust
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 10
+    runs-on: ${{ github.repository_id == '1469130764' && 'ubuntu-24.04' || 'blacksmith-4vcpu-ubuntu-2404' }}
+    timeout-minutes: ${{ github.repository_id == '1469130764' && 30 || 10 }}
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -604,8 +605,8 @@ jobs:
     name: Mobile Native Static Analysis
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.mobile_native != 'false' }}
-    runs-on: blacksmith-6vcpu-macos-27
-    timeout-minutes: 10
+    runs-on: ${{ github.repository_id == '1469130764' && 'macos-latest' || 'blacksmith-6vcpu-macos-27' }}
+    timeout-minutes: ${{ github.repository_id == '1469130764' && 30 || 10 }}
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -637,8 +638,8 @@ jobs:
     name: Release Smoke
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.release_smoke != 'false' }}
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 15
+    runs-on: ${{ github.repository_id == '1469130764' && 'ubuntu-24.04' || 'blacksmith-8vcpu-ubuntu-2404' }}
+    timeout-minutes: ${{ github.repository_id == '1469130764' && 30 || 15 }}
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -677,7 +678,7 @@ jobs:
         mobile_native_static_analysis,
         release_smoke,
       ]
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ${{ github.repository_id == '1469130764' && 'ubuntu-24.04' || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 5
     steps:
       - name: Require every job to pass

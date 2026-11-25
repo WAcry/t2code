@@ -2819,7 +2819,7 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
 }
 
 const PUBLIC_APP_NAME = "t2code";
-const PUBLIC_APP_REPOSITORY = "https://github.com/WAcry/t3code";
+const PUBLIC_APP_REPOSITORY = "https://github.com/WAcry/t2code";
 
 export function resolveDesktopProductName(version: string, t2codeBuild = false): string {
   if (t2codeBuild) return PUBLIC_APP_NAME;

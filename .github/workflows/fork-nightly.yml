@@ -25,7 +25,8 @@ concurrency:
 jobs:
   source:
     name: Verify pinned release sources
-    if: github.repository == 'WAcry/t3code'
+    # The repository ID for WAcry/t2code stays the same across renames.
+    if: github.repository_id == '1469130764'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:

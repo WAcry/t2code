@@ -9,6 +9,8 @@
 - 更新 PR 固定提交前，核对最新 SHA 和改动。用 `--reuse-pr` 沿用上一次的提交。上游正式发布分栏改版后，可以移除这层合并。
 - 分栏 PR 和对话上下文补丁独立维护。即使分栏已进入上游，每次同步 nightly 仍要核对[对话上下文补丁](#对话上下文补丁)的行为。
 
+普通 CI 在 fork 上使用 GitHub 托管的 Ubuntu 和 macOS runner。同步上游时，新加的 CI job 也应能在 fork 的 runner 上运行。可在 `Changes` job 的 “Set up job” 步骤核对实际分配的 runner。[CI 运行记录](https://github.com/WAcry/t2code/actions/workflows/ci.yml)
+
 ## 准备候选
 
 在以 fork 为 `origin` 的工作区运行，需要 Git 2.45 或更新版本、Node 24 或更新版本，以及 GitHub CLI。
@@ -23,9 +25,9 @@ node scripts/prepare-fork-nightly.mjs --pr $reviewedPr
 
 ## 发布公开安装包
 
-公开安装包显示 t2code 名称，沿用上游 nightly 的内部应用 ID、版本号、配置和数据目录。内置桌面更新已关闭。新版本可从本仓库下载后手动安装。公开构建支持 Windows 和 Linux x64/arm64，以及 Intel macOS。GitHub 预发布同时提供安装包、`SHA256SUMS` 和源码归档。 [Fork 发布页](https://github.com/WAcry/t3code/releases)
+公开安装包显示 t2code 名称，沿用上游 nightly 的内部应用 ID、版本号、配置和数据目录。内置桌面更新已关闭。新版本可从本仓库下载后手动安装。公开构建支持 Windows 和 Linux x64/arm64，以及 Intel macOS。GitHub 预发布同时提供安装包、`SHA256SUMS` 和源码归档。 [Fork 发布页](https://github.com/WAcry/t2code/releases)
 
-将候选分支推送到 fork，由 `Fork nightly` 工作流构建。若工作流处于手动禁用状态，先在 GitHub Actions 中启用。 [构建记录](https://github.com/WAcry/t3code/actions/workflows/fork-nightly.yml)
+将候选分支推送到 fork，由 `Fork nightly` 工作流构建。若工作流处于手动禁用状态，先在 GitHub Actions 中启用。 [构建记录](https://github.com/WAcry/t2code/actions/workflows/fork-nightly.yml)
 
 ```powershell
 $releaseTag = Read-Host '输入候选的发布标签'
@@ -38,13 +40,13 @@ git push origin $candidate
 ```powershell
 $buildRunId = Read-Host '输入成功的候选构建编号'
 $sha = git rev-parse $candidate
-$builtSha = gh run view $buildRunId --repo WAcry/t3code --json headSha --jq .headSha
+$builtSha = gh run view $buildRunId --repo WAcry/t2code --json headSha --jq .headSha
 if ($builtSha -ne $sha) { throw '构建提交与候选提交不一致' }
-gh run watch $buildRunId --repo WAcry/t3code --exit-status
+gh run watch $buildRunId --repo WAcry/t2code --exit-status
 if ($LASTEXITCODE -ne 0) { throw '候选构建失败' }
 git push origin "${candidate}:main"
 if ($LASTEXITCODE -ne 0) { throw 'main 推送失败' }
-gh workflow run fork-nightly.yml --repo WAcry/t3code --ref main -f publish=true -f "build_run_id=$buildRunId"
+gh workflow run fork-nightly.yml --repo WAcry/t2code --ref main -f publish=true -f "build_run_id=$buildRunId"
 ```
 
 ## 品牌改动
