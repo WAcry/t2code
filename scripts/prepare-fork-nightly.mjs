@@ -39,6 +39,7 @@ const forkPaths = new Set([
   "apps/web/src/appInit.tsx",
   "apps/web/src/branding.ts",
   "apps/web/src/components/ClientSettingsRecoveryGate.tsx",
+  "apps/web/src/components/Sidebar.browser.test.tsx",
   "apps/web/src/components/T3Wordmark.tsx",
   "apps/web/src/components/chat/TimelineAssistantRows.tsx",
   "apps/web/src/components/onboarding/WelcomePage.tsx",
