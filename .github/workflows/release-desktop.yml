@@ -188,6 +188,14 @@ jobs:
           git sparse-checkout set --no-cone '/*' '!/.repos/'
           git -c checkout.workers=0 checkout --detach FETCH_HEAD
 
+      - name: Select Xcode 26 for the fork macOS 15 runner
+        if: inputs.t2code_build && inputs.runner == 'macos-15'
+        shell: bash
+        run: |
+          developer_dir=/Applications/Xcode_26.3.app/Contents/Developer
+          DEVELOPER_DIR="$developer_dir" xcodebuild -version
+          echo "DEVELOPER_DIR=$developer_dir" >> "$GITHUB_ENV"
+
       # pnpm checks the lockfile and policy before reusing this result. A missing
       # artifact leaves the cache empty, so installation runs the checks again.
       - name: Download dependency verification
