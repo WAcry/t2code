@@ -499,6 +499,21 @@ function searchPage(nodes: ReadonlyArray<unknown>, hasNextPage = false) {
   );
 }
 
+function missingStackFields(otherErrors: ReadonlyArray<unknown> = []) {
+  return output(
+    encodeJson({
+      errors: [
+        ...["stack", "stackEntry"].map((fieldName) => ({
+          message: `Field '${fieldName}' doesn't exist on type 'PullRequest'`,
+          path: ["fragment PullRequestStackFields", fieldName],
+          extensions: { code: "undefinedField", typeName: "PullRequest", fieldName },
+        })),
+        ...otherErrors,
+      ],
+    }),
+  );
+}
+
 const searchQueryOfCall = searchOfCall;
 
 function matches(call: ApiCall, needle: string): boolean {
@@ -1205,7 +1220,7 @@ layer("GitHubPullRequestApi.layer", (it) => {
       }),
   );
 
-  it.effect("reads linked pull requests on one host together, filed back by position", () =>
+  it.effect("retries a summary batch without fields the host does not support", () =>
     Effect.gen(function* () {
       const node = (number: number) => ({
         number,
@@ -1240,6 +1255,7 @@ layer("GitHubPullRequestApi.layer", (it) => {
         closedAt: null,
         commits: { nodes: [{ commit: { statusCheckRollup: { state: "SUCCESS" } } }] },
       });
+      mockedExecute.mockReturnValueOnce(Effect.succeed(missingStackFields()));
       mockedExecute.mockReturnValueOnce(
         Effect.succeed(
           output(
@@ -1260,12 +1276,12 @@ layer("GitHubPullRequestApi.layer", (it) => {
           cli.getPullRequestSummary({
             cwd: "/w",
             repository: "acme/web",
-            host: "github.com",
+            host: "github.summaries.acme.dev",
             number,
           }),
         { concurrency: "unbounded" },
       ).pipe(Effect.forkChild);
-      yield* TestClock.adjust("10 millis");
+      yield* TestClock.adjust("20 millis");
       const [seven, eight] = yield* Fiber.join(reads);
 
       assert.deepStrictEqual(
@@ -1291,17 +1307,19 @@ layer("GitHubPullRequestApi.layer", (it) => {
         },
       );
       assert.strictEqual(eight?.headBranch, "feat/8");
-      expect(mockedExecute).toHaveBeenCalledOnce();
-      expect(queryAt(0)).toContain(
+      expect(mockedExecute).toHaveBeenCalledTimes(2);
+      expect(queryAt(0)).toContain("stackEntry");
+      expect(queryAt(1)).toContain(
         "_0_repository:repository(owner:$_0_owner name:$_0_name){pullRequest(number:$_0_number)",
       );
-      expect(varsAt(0)).toMatchObject({
+      expect(varsAt(1)).toMatchObject({
         _0_owner: "acme",
         _0_name: "web",
         _0_number: 7,
-        _0_stacks: true,
         _1_number: 8,
       });
+      expect(queryAt(1)).not.toMatch(/\bstack(?:Entry)?\b/);
+      expect(seven?.stack).toBeUndefined();
     }),
   );
 
@@ -1335,8 +1353,8 @@ layer("GitHubPullRequestApi.layer", (it) => {
                       mergedAt: null,
                       closedAt: null,
                       commits: { nodes: [] },
-                      stack: null,
-                      stackEntry: null,
+                      stack: { number: 3, size: 2, baseRefName: "main" },
+                      stackEntry: { position: 1 },
                     },
                   },
                 },
@@ -1371,8 +1389,15 @@ layer("GitHubPullRequestApi.layer", (it) => {
 
         expect(Result.isFailure(seven!) ? seven.failure._tag : null).toBe("GitHubApiNotFoundError");
         expect(Result.isSuccess(eight!) ? eight.success.headBranch : null).toBe("feat/eight");
+        expect(Result.isSuccess(eight!) ? eight.success.stack : null).toEqual({
+          number: 3,
+          size: 2,
+          base: "main",
+          position: 1,
+        });
         expect(mockedExecute).toHaveBeenCalledOnce();
         expect(callAt(0)).toMatchObject({ kind: "graphql", partial: true });
+        expect(queryAt(0)).toContain("stackEntry");
       }),
   );
 
@@ -1757,7 +1782,11 @@ layer("GitHubPullRequestApi.layer", (it) => {
       mockedExecute.mockReturnValue(
         Effect.succeed(
           searchPage([
-            searchItem(7, "acme/web", "2026-07-03T00:00:00Z"),
+            {
+              ...searchItem(7, "acme/web", "2026-07-03T00:00:00Z"),
+              stack: { number: 3, size: 2, baseRefName: "main" },
+              stackEntry: { position: 1 },
+            },
             searchItem(9, "pingdotgg/t3code", "2026-07-02T00:00:00Z"),
             {},
           ]),
@@ -1792,6 +1821,8 @@ layer("GitHubPullRequestApi.layer", (it) => {
       assert.deepStrictEqual(batch.items[0]?.labels, [
         { name: "bug", color: "ff0000", description: "Something is broken" },
       ]);
+      expect(queryAt(0)).toContain("stackEntry");
+      expect(batch.items[0]?.stack).toEqual({ number: 3, size: 2, base: "main", position: 1 });
       assert.isFalse(batch.truncated);
     }),
   );
@@ -3280,32 +3311,83 @@ layer("GitHubPullRequestApi.layer", (it) => {
     }),
   );
 
-  it.effect("names the host on every repository it addresses", () =>
+  it.effect("shares the stack fallback across reads and retries it after a host upgrade", () =>
     Effect.gen(function* () {
-      mockedExecute.mockImplementation((call) =>
-        Effect.succeed(
-          call.kind === "graphql" && call.operationName === "PullRequestList"
-            ? emptyList()
-            : emptySearch(),
-        ),
-      );
+      const row = searchItem(2, "acme/web", "2026-07-03T00:00:00Z");
+      mockedExecute
+        .mockReturnValueOnce(Effect.succeed(missingStackFields()))
+        .mockReturnValueOnce(Effect.succeed(searchPage([row])))
+        .mockReturnValueOnce(Effect.succeed(emptySearch()))
+        .mockReturnValueOnce(Effect.succeed(output(listedPullRequests(1, 1))))
+        .mockReturnValueOnce(
+          Effect.succeed(
+            searchPage([
+              {
+                ...row,
+                stack: { number: 3, size: 2, baseRefName: "main" },
+                stackEntry: { position: 1 },
+              },
+            ]),
+          ),
+        );
       const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
-
-      yield* cli.listPullRequests({
+      const input = {
         cwd: "/w",
-        repository: "acme/web",
-        host: "github.acme.dev",
+        host: "github.upgrade.acme.dev",
         state: "open",
         involvement: "all",
         viewer: "bilal",
         limit: 10,
-      });
+      } as const;
+      const searchInput = {
+        ...input,
+        repositories: ["acme/web"],
+      };
+      const search = yield* cli.searchPullRequests(searchInput);
+      const listing = yield* cli.listPullRequests({ ...input, repository: "acme/web" });
+      yield* TestClock.adjust("11 minutes");
+      const upgraded = yield* cli.searchPullRequests(searchInput);
 
-      assert.isAbove(mockedExecute.mock.calls.length, 0);
+      expect(listing.items.map((item) => item.number)).toEqual([1]);
+      expect(search.items.map((item) => item.number)).toEqual([2]);
+      expect(upgraded.items[0]?.stack).toEqual({ number: 3, size: 2, base: "main", position: 1 });
+      expect(mockedExecute).toHaveBeenCalledTimes(5);
+      expect(mockedStackMemberships).not.toHaveBeenCalled();
       expect(new Set(mockedExecute.mock.calls.map(([call]) => call.host))).toEqual(
-        new Set(["github.acme.dev"]),
+        new Set([input.host]),
       );
       expect(searchOfCall(0)).toContain("repo:acme/web");
+      expect(queryAt(0)).toContain("stackEntry");
+      for (const index of [1, 2, 3]) {
+        expect(queryAt(index)).not.toMatch(/\bstack(?:Entry)?\b/);
+      }
+      expect(queryAt(4)).toContain("stackEntry");
+    }),
+  );
+
+  it.effect("does not cache stack unavailability when GitHub also reports another error", () =>
+    Effect.gen(function* () {
+      mockedExecute
+        .mockReturnValueOnce(
+          Effect.succeed(missingStackFields([{ message: "Access denied", type: "FORBIDDEN" }])),
+        )
+        .mockReturnValueOnce(Effect.succeed(emptySearch()));
+      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+      const input = {
+        cwd: "/w",
+        repositories: ["acme/web"],
+        host: "github.errors.acme.dev",
+        state: "open",
+        involvement: "all",
+        viewer: "bilal",
+        limit: 10,
+      } as const;
+
+      const error = yield* Effect.flip(cli.searchPullRequests(input));
+      expect(error._tag).toBe("GitHubApiResponseError");
+      yield* cli.searchPullRequests(input);
+      expect(mockedExecute).toHaveBeenCalledTimes(2);
+      expect(queryAt(1)).toContain("stackEntry");
     }),
   );
 
