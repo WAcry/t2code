@@ -283,8 +283,9 @@ const joinOffset = (strip: HTMLElement) =>
     .style.getPropertyValue("--jx");
 const tabOffset = (strip: HTMLElement, tabId: string) => {
   const tab = strip.querySelector<HTMLElement>(`[data-layout-pane-tab="${tabId}"]`)!;
-  const left = tab.getBoundingClientRect().left - strip.getBoundingClientRect().left;
-  return `${Math.round(left + strip.scrollLeft)}px`;
+  const stripBox = strip.getBoundingClientRect();
+  const left = tab.getBoundingClientRect().left - stripBox.left;
+  return `${Math.round((left * strip.offsetWidth) / stripBox.width + strip.scrollLeft)}px`;
 };
 
 it("scrolls overflowing pane tabs from the add button without moving the workspace", async () => {
@@ -311,6 +312,7 @@ it("scrolls overflowing pane tabs from the add button without moving the workspa
     expect(startChevron!.getAttribute("aria-disabled")).toBe("true");
     expect(endChevron!.hasAttribute("data-can-scroll")).toBe(true);
   });
+  expect(getComputedStyle(endChevron!).backgroundColor).toBe("rgba(0, 0, 0, 0)");
   endChevron!.click();
   await vi.waitFor(() => expect(strip.scrollLeft).toBeGreaterThan(0));
   await vi.waitFor(() => expect(startChevron!.hasAttribute("data-can-scroll")).toBe(true));

@@ -79,6 +79,9 @@ jobs:
           [[ "$(gh api "repos/$upstream/commits/$upstream_tag" --jq .sha)" == "$upstream_commit" ]]
           git merge-base --is-ancestor "$upstream_commit" "$GITHUB_SHA"
           git merge-base --is-ancestor "$pr_commit" "$GITHUB_SHA"
+          tool="$RUNNER_TEMP/t2code.mjs"
+          git show "$GITHUB_SHA:fork/tools/t2code.mjs" > "$tool"
+          node "$tool" check --ref "$GITHUB_SHA"
           public_config="$RUNNER_TEMP/t3code-public.env"
           git show "$GITHUB_SHA:.env.example" > "$public_config"
 
