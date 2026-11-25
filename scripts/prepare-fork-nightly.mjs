@@ -34,6 +34,7 @@ const forkPaths = new Set([
   "apps/server/src/orchestration-v2/ThreadFork.execution.test.ts",
   "apps/server/src/orchestration-v2/testkit/ProviderSwitch.integration.test.ts",
   "apps/server/src/peer/PeerForwarding.test.ts",
+  "apps/server/src/peer/RemoteDelegation.test.ts",
   "apps/web/src/appIcon.ts",
   "apps/web/src/appInit.tsx",
   "apps/web/src/branding.ts",
