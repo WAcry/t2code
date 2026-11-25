@@ -669,8 +669,8 @@ it.effect("runs any tool that takes a linked environment there", () =>
       });
       expect(clientRead.isError).toBe(false);
       expect((yield* Ref.get(seen)).reads).toEqual([
-        { beforePosition: Number.MAX_SAFE_INTEGER, limit: 10, view: "messages" },
-        { beforePosition: Number.MAX_SAFE_INTEGER, limit: 10, view: "messages" },
+        { beforePosition: Number.MAX_SAFE_INTEGER, limit: 30, view: "messages" },
+        { beforePosition: Number.MAX_SAFE_INTEGER, limit: 30, view: "messages" },
       ]);
 
       // This environment's own id keeps the call here.

@@ -7314,6 +7314,7 @@
   "efe5701992b34dfd": "다음 브랜치의 변경 사항을 받음",
   "d2970574ef7860d0": "{term, select, mr {병합 요청} cr {변경 요청} other {풀 리퀘스트}} 브랜치 복사",
   "45c92416a82cf22c": "브랜치 이름 복사됨",
+  "3b03fc47eba632b4": "{count, plural, other {변경된 파일 {formattedCount}개}}",
   "6a2b21500ebf1305": "{term, select, mr {병합 요청} cr {변경 요청} other {풀 리퀘스트}} 패널 접기",
   "8f60d4922d383e74": "{term, select, mr {병합 요청 탭} cr {변경 요청 탭} other {풀 리퀘스트 탭}}",
   "06d834ebd2f1b69f": "{term, select, mr {병합 요청} cr {변경 요청} other {풀 리퀘스트}} #{number}을(를) 찾을 수 없습니다",

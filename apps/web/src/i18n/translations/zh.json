@@ -7351,6 +7351,7 @@
   "efe5701992b34dfd": "接收来自以下分支的更改",
   "d2970574ef7860d0": "复制 {term, select, mr {MR} cr {change request} other {PR}} 分支",
   "45c92416a82cf22c": "已复制分支名称",
+  "3b03fc47eba632b4": "{count, plural, other {{formattedCount} 个已更改的文件}}",
   "6a2b21500ebf1305": "收起 {term, select, mr {MR} cr {change request} other {PR}} 面板",
   "8f60d4922d383e74": "{term, select, mr {MR} cr {change request} other {PR}} 标签页",
   "06d834ebd2f1b69f": "未找到 {term, select, mr {MR} cr {change request} other {PR}} #{number}",

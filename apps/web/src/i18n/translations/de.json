@@ -7340,6 +7340,7 @@
   "efe5701992b34dfd": "erhält Änderungen von",
   "d2970574ef7860d0": "{term, select, mr {Branch des Merge Requests kopieren} cr {Branch der Änderungsanfrage kopieren} other {Branch des Pull Requests kopieren}}",
   "45c92416a82cf22c": "Branch-Name kopiert",
+  "3b03fc47eba632b4": "{count, plural, one {{formattedCount} geänderte Datei} other {{formattedCount} geänderte Dateien}}",
   "6a2b21500ebf1305": "{term, select, mr {Merge-Request-Bereich einklappen} cr {Änderungsanfrage-Bereich einklappen} other {Pull-Request-Bereich einklappen}}",
   "8f60d4922d383e74": "{term, select, mr {Merge-Request-Tabs} cr {Änderungsanfrage-Tabs} other {Pull-Request-Tabs}}",
   "06d834ebd2f1b69f": "{term, select, mr {Merge Request #{number} nicht gefunden} cr {Änderungsanfrage #{number} nicht gefunden} other {Pull Request #{number} nicht gefunden}}",
