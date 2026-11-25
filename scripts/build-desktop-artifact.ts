@@ -957,9 +957,12 @@ interface ResolvedBuildOptions {
   readonly keepStage: boolean;
   readonly signed: boolean;
   readonly verbose: boolean;
+  readonly disableAutoUpdate: boolean;
+  readonly t2codeBuild: boolean;
   readonly mockUpdates: boolean;
   readonly mockUpdateServerPort: number | undefined;
   readonly wslRuntime: string | undefined;
+  readonly forkReleaseVersion: string | undefined;
 }
 
 interface StagePackageJson {
@@ -967,6 +970,7 @@ interface StagePackageJson {
   readonly version: string;
   readonly buildVersion: string;
   readonly t3codeCommitHash: string;
+  readonly t3codeDisableAutoUpdate?: true;
   readonly t3codeWebAuthn?: MacWebAuthnEntitlements;
   readonly private: true;
   readonly packageManager: string;
@@ -1658,9 +1662,14 @@ const BuildEnvConfig = Config.all({
   keepStage: Config.Boolean("T3CODE_DESKTOP_KEEP_STAGE").pipe(Config.withDefault(false)),
   signed: Config.Boolean("T3CODE_DESKTOP_SIGNED").pipe(Config.withDefault(false)),
   verbose: Config.Boolean("T3CODE_DESKTOP_VERBOSE").pipe(Config.withDefault(false)),
+  disableAutoUpdate: Config.Boolean("T3CODE_DESKTOP_DISABLE_AUTO_UPDATE").pipe(
+    Config.withDefault(false),
+  ),
+  t2codeBuild: Config.Boolean("T3CODE_T2CODE_BUILD").pipe(Config.withDefault(false)),
   mockUpdates: Config.Boolean("T3CODE_DESKTOP_MOCK_UPDATES").pipe(Config.withDefault(false)),
   mockUpdateServerPort: Config.String("T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT").pipe(Config.option),
   wslRuntime: Config.String("T3CODE_DESKTOP_WSL_RUNTIME").pipe(Config.option),
+  forkReleaseVersion: Config.String("T3CODE_FORK_RELEASE_VERSION").pipe(Config.withDefault("")),
 });
 
 const MockUpdateServerPortSchema = Schema.NumberFromString.check(
@@ -1764,9 +1773,12 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     keepStage,
     signed,
     verbose,
+    disableAutoUpdate: env.disableAutoUpdate || env.t2codeBuild,
+    t2codeBuild: env.t2codeBuild,
     mockUpdates,
     mockUpdateServerPort,
     wslRuntime,
+    forkReleaseVersion: env.forkReleaseVersion.trim() || undefined,
   } satisfies ResolvedBuildOptions;
 });
 
@@ -2762,11 +2774,23 @@ export function isDesktopPreviewVersion(version: string): boolean {
   return /-pr\./.test(version) || /-preview\.\d{8}\.\d+$/.test(version);
 }
 
-export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
-  return resolveWebAssetBrandForChannel(resolveDesktopUpdateChannel(version));
+export function resolveDesktopWebAssetBrand(version: string, t2codeBuild = false): WebAssetBrand {
+  return t2codeBuild
+    ? "t2code"
+    : resolveWebAssetBrandForChannel(resolveDesktopUpdateChannel(version));
 }
 
-export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIconAssets {
+export function resolveDesktopBuildIconAssets(
+  version: string,
+  t2codeBuild = false,
+): DesktopBuildIconAssets {
+  if (t2codeBuild) {
+    return {
+      macIconPng: "assets/t2code/icon.png",
+      linuxIconPng: "assets/t2code/icon.png",
+      windowsIconIco: "assets/t2code/icon.ico",
+    };
+  }
   if (resolveDesktopUpdateChannel(version) === "nightly") {
     return {
       macIconPng: BRAND_ASSET_PATHS.nightlyMacIconPng,
@@ -2797,7 +2821,11 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
   return `${trimmed.slice(0, versionSeparator)}/${trimmed.slice(versionSeparator + 1)}`;
 }
 
-export function resolveDesktopProductName(version: string): string {
+const PUBLIC_APP_NAME = "t2code";
+const PUBLIC_APP_REPOSITORY = "https://github.com/WAcry/t2code";
+
+export function resolveDesktopProductName(version: string, t2codeBuild = false): string {
+  if (t2codeBuild) return PUBLIC_APP_NAME;
   return resolveDesktopUpdateChannel(version) === "nightly"
     ? "T3 Code (Nightly)"
     : (desktopPackageJson.productName ?? "T3 Code");
@@ -2818,15 +2846,27 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     | undefined,
   wslRuntimeBundled = false,
   arch?: typeof BuildArch.Type,
+  disableAutoUpdate = false,
+  t2codeBuild = false,
 ) {
+  const productName = resolveDesktopProductName(version, t2codeBuild);
+  const appName = t2codeBuild ? PUBLIC_APP_NAME : "T3 Code";
   const buildConfig: Record<string, unknown> = {
     afterPack: (yield* Path.Path).join(yield* RepoRoot, "scripts/prepare-server-compile-cache.cjs"),
     appId: DESKTOP_APP_ID,
-    productName: resolveDesktopProductName(version),
-    artifactName: "T3-Code-${version}-${arch}.${ext}",
+    productName,
+    artifactName: t2codeBuild
+      ? "t2code-${version}-${arch}.${ext}"
+      : "T3-Code-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [
       ...DESKTOP_FILE_EXCLUSIONS,
+      ...(t2codeBuild
+        ? [
+            "!apps/desktop/prod-resources/dmg/**/*",
+            "!apps/desktop/prod-resources/linux/*.metainfo.xml",
+          ]
+        : []),
       ...(platform === "mac"
         ? resolveMacFileExclusions(arch)
         : platform === "linux"
@@ -2852,7 +2892,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   const updateChannel = resolveDesktopUpdateChannel(version);
   // Missing publish config infers a GitHub feed from tokens; staging has no repository, so manifest generation would crash.
   buildConfig.publish = null;
-  if (!isDesktopPreviewVersion(version)) {
+  if (!disableAutoUpdate && !t2codeBuild && !isDesktopPreviewVersion(version)) {
     const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
     if (publishConfig) {
       buildConfig.publish = [publishConfig];
@@ -2876,24 +2916,15 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       extendInfo: {
         // macOS 26 offers Messages/Mail codes in every text field unless opted out.
         NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac: true,
-        NSLocalNetworkUsageDescription:
-          "T3 Code connects to devices on your local network for remote environments and commands run by terminals and coding agents.",
-        NSCalendarsUsageDescription:
-          "Commands you run in T3 Code may need access to your calendars.",
-        NSCalendarsFullAccessUsageDescription:
-          "Commands you run in T3 Code may need to read and write your calendar events.",
-        NSCalendarsWriteOnlyAccessUsageDescription:
-          "Commands you run in T3 Code may need to add events to your calendars.",
-        NSScreenCaptureUsageDescription:
-          "T3 Code captures the active window when you use the window capture shortcut.",
-        NSCameraUsageDescription:
-          "T3 Code lets commands run by terminals and coding agents use the camera.",
-        NSMicrophoneUsageDescription:
-          "T3 Code lets commands run by terminals and coding agents use the microphone.",
-        NSAppleEventsUsageDescription:
-          "T3 Code lets commands run by terminals and coding agents control other apps.",
-        NSSpeechRecognitionUsageDescription:
-          "T3 Code transcribes your dictation on this Mac when you choose Apple Speech.",
+        NSLocalNetworkUsageDescription: `${appName} connects to devices on your local network for remote environments and commands run by terminals and coding agents.`,
+        NSCalendarsUsageDescription: `Commands you run in ${appName} may need access to your calendars.`,
+        NSCalendarsFullAccessUsageDescription: `Commands you run in ${appName} may need to read and write your calendar events.`,
+        NSCalendarsWriteOnlyAccessUsageDescription: `Commands you run in ${appName} may need to add events to your calendars.`,
+        NSScreenCaptureUsageDescription: `${appName} captures the active window when you use the window capture shortcut.`,
+        NSCameraUsageDescription: `${appName} lets commands run by terminals and coding agents use the camera.`,
+        NSMicrophoneUsageDescription: `${appName} lets commands run by terminals and coding agents use the microphone.`,
+        NSAppleEventsUsageDescription: `${appName} lets commands run by terminals and coding agents control other apps.`,
+        NSSpeechRecognitionUsageDescription: `${appName} transcribes your dictation on this Mac when you choose Apple Speech.`,
         // macOS lists an app under Default web browser only when it opens web
         // pages as documents as well as http and https links (see protocols).
         CFBundleDocumentTypes: [
@@ -2907,7 +2938,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       },
       protocols: [
         {
-          name: "T3 Code",
+          name: appName,
           schemes: ["t3code", "t3code-dev"],
         },
         {
@@ -2929,8 +2960,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "mac" && target === "dmg") {
     buildConfig.dmg = {
       // Finder caches DMG backgrounds by volume name; give each installer its own.
-      title: `${resolveDesktopProductName(version)} ${version} Installer`,
-      background: `dmg/dmg-background-${updateChannel}.png`,
+      title: `${productName} ${version} Installer`,
+      ...(t2codeBuild ? {} : { background: `dmg/dmg-background-${updateChannel}.png` }),
       window: {
         width: 660,
         // DMG bounds include Finder's 32px title bar; keep that artwork strip clear.
@@ -2957,10 +2988,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       icon: "icons",
       category: "Development",
       synopsis: "Desktop GUI for coding agents",
-      maintainer: "T3 Tools <hello@t3.codes>",
+      maintainer: t2codeBuild
+        ? "WAcry <WAcry@users.noreply.github.com>"
+        : "T3 Tools <hello@t3.codes>",
       protocols: [
         {
-          name: "T3 Code",
+          name: appName,
           schemes: ["t3code", "t3code-dev"],
         },
       ],
@@ -2981,7 +3014,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     buildConfig.deb = {
       // FPM runs outside the staged app directory, so source paths must be absolute.
       fpm: [
-        `${path.join(repoRoot, "apps/desktop/resources/linux/com.t3tools.t3code.metainfo.xml")}=/usr/share/metainfo/com.t3tools.t3code.metainfo.xml`,
+        ...(t2codeBuild
+          ? []
+          : [
+              `${path.join(repoRoot, "apps/desktop/resources/linux/com.t3tools.t3code.metainfo.xml")}=/usr/share/metainfo/com.t3tools.t3code.metainfo.xml`,
+            ]),
         `${path.join(repoRoot, "LICENSE")}=/usr/share/doc/t3code/copyright`,
       ],
       // Debian 13 and Ubuntu 24.04 use 64-bit-time names; retain old-name fallbacks.
@@ -3375,6 +3412,7 @@ export const validateWindowsPackagedPayload = Effect.fn(
   readonly appExecutableName: string;
   readonly targetArch: typeof BuildArch.Type;
   readonly appVersion: string;
+  readonly wslRuntimeVersion?: string;
   readonly expectWslRuntime?: boolean;
   readonly fileLimit?: number;
   readonly verbose?: boolean;
@@ -3534,7 +3572,10 @@ export const validateWindowsPackagedPayload = Effect.fn(
     }
     const members = parseWslRuntimeArchiveMembers(listing.stdout);
     // The WSL installer finds t3 under the archive's single stem-named directory.
-    const stem = wslRuntimeArchiveStem(input.appVersion, input.targetArch);
+    const stem = wslRuntimeArchiveStem(
+      input.wslRuntimeVersion ?? input.appVersion,
+      input.targetArch,
+    );
     const topLevel = new Set(members.map((member) => member.split("/")[0]));
     if (topLevel.size !== 1 || !topLevel.has(stem)) {
       return yield* invalidWslRuntime(
@@ -3733,7 +3774,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
 
   const appVersion =
     options.version ?? resolveTaggedSourceVersion(repoRoot, serverPackageJson.version);
-  const iconAssets = resolveDesktopBuildIconAssets(appVersion);
+  const iconAssets = resolveDesktopBuildIconAssets(appVersion, options.t2codeBuild);
   const commitHash = yield* resolveGitCommitHash(repoRoot);
   const mkdir = options.keepStage ? fs.makeTempDirectory : fs.makeTempDirectoryScoped;
   const stageRoot = yield* mkdir({
@@ -3820,7 +3861,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     });
   }
 
-  const webAssetBrand = resolveDesktopWebAssetBrand(appVersion);
+  const webAssetBrand = resolveDesktopWebAssetBrand(appVersion, options.t2codeBuild);
   yield* applyWebBrandAssets(webAssetBrand, "apps/server/dist/client");
   yield* Effect.log(`[desktop-artifact] Applied ${webAssetBrand} web client branding.`);
   yield* validateBundledClientAssets(path.dirname(bundledClientEntry));
@@ -3842,8 +3883,18 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
         path.join(extensionDir, file),
       );
     }
+    if (options.t2codeBuild) {
+      const metadataPath = path.join(extensionDir, "metadata.json");
+      const metadata = yield* fs.readFileString(metadataPath);
+      yield* fs.writeFileString(
+        metadataPath,
+        metadata
+          .replaceAll("T3 Code", PUBLIC_APP_NAME)
+          .replace("https://github.com/pingdotgg/t3code", PUBLIC_APP_REPOSITORY),
+      );
+    }
   }
-  if (options.platform === "mac" && options.target === "dmg") {
+  if (options.platform === "mac" && options.target === "dmg" && !options.t2codeBuild) {
     yield* stageDesktopDmgBackground(
       stageResourcesDir,
       resolveDesktopUpdateChannel(appVersion),
@@ -3899,6 +3950,9 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
   // electron-builder is filtering out stageResourcesDir directory in the AppImage for production
   const stageProdResourcesDir = path.join(stageAppDir, "apps/desktop/prod-resources");
   yield* fs.copy(stageResourcesDir, stageProdResourcesDir);
+  if (options.t2codeBuild) {
+    yield* fs.copyFile(path.join(repoRoot, "LICENSE"), path.join(stageProdResourcesDir, "LICENSE"));
+  }
 
   const configuredMacPasskeySigning =
     options.platform === "mac" && options.signed
@@ -3962,15 +4016,17 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,
+    ...(options.disableAutoUpdate ? { t3codeDisableAutoUpdate: true } : {}),
     // Read by apps/desktop/src/preview/Passkeys.ts; must match the signed entitlements.
     ...(macWebAuthn ? { t3codeWebAuthn: macWebAuthn } : {}),
     private: true,
     packageManager: rootPackageJson.packageManager,
-    description:
-      "T3 Code is an open-source desktop app for coding agents. Work with your existing agent subscriptions, review code changes, and run commands in your projects. Connect from desktop, web, or mobile to continue working remotely.",
+    description: options.t2codeBuild
+      ? "t2code is an unofficial desktop app for coding agents, based on the T3 Code source code."
+      : "T3 Code is an open-source desktop app for coding agents. Work with your existing agent subscriptions, review code changes, and run commands in your projects. Connect from desktop, web, or mobile to continue working remotely.",
     license: "MIT",
-    homepage: "https://t3.codes",
-    author: "T3 Tools",
+    homepage: options.t2codeBuild ? PUBLIC_APP_REPOSITORY : "https://t3.codes",
+    author: options.t2codeBuild ? "WAcry" : "T3 Tools",
     main: "apps/desktop/dist-electron/boot.cjs",
     build: yield* createBuildConfig(
       options.platform,
@@ -3987,6 +4043,8 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
         : undefined,
       bundlesWslRuntime({ platform: options.platform, runtimeArchivePath: options.wslRuntime }),
       options.arch,
+      options.disableAutoUpdate,
+      options.t2codeBuild,
     ),
     dependencies: stageDependencies,
     devDependencies: {
@@ -4148,9 +4206,10 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
   if (options.platform === "win") {
     yield* validateWindowsPackagedPayload({
       stageDistDir,
-      appExecutableName: `${resolveDesktopProductName(appVersion)}.exe`,
+      appExecutableName: `${resolveDesktopProductName(appVersion, options.t2codeBuild)}.exe`,
       targetArch: options.arch,
       appVersion,
+      ...(options.forkReleaseVersion ? { wslRuntimeVersion: options.forkReleaseVersion } : {}),
       expectWslRuntime: bundlesWslRuntime({
         platform: options.platform,
         runtimeArchivePath: options.wslRuntime,

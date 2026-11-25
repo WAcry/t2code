@@ -102,7 +102,7 @@ export const make = Effect.gen(function* () {
   const serverRoot = environment.serverRoot;
   const needsExtraction = environment.isPackaged && environment.platform === "win32";
   const treeRoot = join(environment.stateDir, "wsl-server-tree");
-  const version = environment.appVersion;
+  const version = DesktopEnvironment.T2CODE_FORK_RELEASE_VERSION || environment.appVersion;
   const versionDir = join(treeRoot, version);
 
   const sweepStale = Effect.gen(function* () {

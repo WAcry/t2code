@@ -37,6 +37,8 @@ export interface UpdatesHarnessOptions {
   readonly env?: Record<string, string | undefined>;
   readonly platform?: NodeJS.Platform;
   readonly packageType?: string | undefined;
+  readonly packageMetadata?: string;
+  readonly appUpdateYml?: string;
   readonly installRecord?: string | undefined;
   readonly policy?: DesktopUpdatePolicy.UpdatePolicy;
   readonly appVersion?: string;
@@ -251,6 +253,12 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     path.endsWith(DesktopUpdates.DESKTOP_UPDATE_INSTALL_RECORD_FILE);
   const layerFileSystem = FileSystem.layerNoop({
     readFileString: (path) => {
+      if (path.endsWith("package.json") && options.packageMetadata !== undefined) {
+        return Effect.succeed(options.packageMetadata);
+      }
+      if (path.endsWith("app-update.yml") && options.appUpdateYml !== undefined) {
+        return Effect.succeed(options.appUpdateYml);
+      }
       const installRecord = isInstallRecord(path)
         ? (installRecords.get(path) ?? previousInstallRecord)
         : undefined;

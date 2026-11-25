@@ -5,6 +5,7 @@ import {
   resolveAppIconId,
 } from "@t3tools/shared/appIcons";
 import { msg } from "gt-react";
+import { IS_T2CODE_BUILD } from "./branding";
 
 /** "Default" first, showing the build's own icon. */
 export const APP_ICON_OPTIONS = [
@@ -13,11 +14,13 @@ export const APP_ICON_OPTIONS = [
     label: msg("Default", { $context: "app icon option" }),
     src: "/apple-touch-icon.png",
   },
-  ...APP_ICONS.map(({ id, label }) => ({
-    id,
-    label,
-    src: `/app-icons/${appIconFileName(id, "universal")}`,
-  })),
+  ...(IS_T2CODE_BUILD
+    ? []
+    : APP_ICONS.map(({ id, label }) => ({
+        id,
+        label,
+        src: `/app-icons/${appIconFileName(id, "universal")}`,
+      }))),
 ];
 
 export function appIconOption(appIcon: string) {
@@ -31,7 +34,7 @@ export function applyAppIconFavicon(appIcon: string): void {
   if (!link) return;
   link.dataset.defaultHref ??= link.getAttribute("href") ?? "";
   link.dataset.defaultSizes ??= link.getAttribute("sizes") ?? "";
-  const id = resolveAppIconId(appIcon);
+  const id = IS_T2CODE_BUILD ? null : resolveAppIconId(appIcon);
   link.setAttribute(
     "href",
     id === null ? link.dataset.defaultHref : `/app-icons/${appIconFileName(id, "favicon")}`,

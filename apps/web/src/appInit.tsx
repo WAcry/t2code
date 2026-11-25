@@ -28,7 +28,7 @@ import { startDesktopUpdateLaunchNotice } from "./components/sidebar/updateEvery
 import { startSlowRpcRequestToasts } from "./components/SlowRpcRequestToastCoordinator";
 import { startThreadNotifications } from "./components/ThreadNotificationCoordinator";
 import { startGuideRunNotifications } from "./components/pullRequest/guide/PullRequestGuideRunCoordinator";
-import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "./branding";
+import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL, IS_T2CODE_BUILD } from "./branding";
 import { resolveServerBackedAppDisplayName, resolveWindowTitle } from "./branding.logic";
 import { isElectron } from "./env";
 import {
@@ -179,13 +179,15 @@ function startDocumentTitle(router: AppRouter): void {
             ),
           );
     const title = resolveWindowTitle({
-      appDisplayName: resolveServerBackedAppDisplayName({
-        baseName: APP_BASE_NAME,
-        fallbackDisplayName: APP_DISPLAY_NAME,
-        fallbackStageLabel: APP_STAGE_LABEL,
-        primaryServerVersion:
-          appAtomRegistry.get(primaryServerConfigAtom)?.environment.serverVersion ?? null,
-      }),
+      appDisplayName: IS_T2CODE_BUILD
+        ? APP_DISPLAY_NAME
+        : resolveServerBackedAppDisplayName({
+            baseName: APP_BASE_NAME,
+            fallbackDisplayName: APP_DISPLAY_NAME,
+            fallbackStageLabel: APP_STAGE_LABEL,
+            primaryServerVersion:
+              appAtomRegistry.get(primaryServerConfigAtom)?.environment.serverVersion ?? null,
+          }),
       projectTitle: project?.title ?? null,
       threadTitle: thread?.title ?? null,
       ...(getClientSettings().screenReaderWindowTitle && {

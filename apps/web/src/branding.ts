@@ -15,11 +15,16 @@ function readInjectedDesktopAppBranding(): DesktopAppBranding | null {
 
 const injectedDesktopAppBranding = readInjectedDesktopAppBranding();
 const hostedAppChannel = import.meta.env.VITE_HOSTED_APP_CHANNEL?.trim().toLowerCase();
+declare const __T3CODE_T2CODE_BUILD__: boolean | undefined;
+
+export const IS_T2CODE_BUILD =
+  typeof __T3CODE_T2CODE_BUILD__ !== "undefined" && __T3CODE_T2CODE_BUILD__;
 
 export const HOSTED_APP_CHANNEL =
   hostedAppChannel === "latest" || hostedAppChannel === "nightly" ? hostedAppChannel : null;
 export const HOSTED_APP_CHANNEL_LABEL = resolveHostedAppChannelLabel(HOSTED_APP_CHANNEL);
-export const APP_BASE_NAME = injectedDesktopAppBranding?.baseName ?? "T3 Code";
+export const APP_BASE_NAME =
+  injectedDesktopAppBranding?.baseName ?? (IS_T2CODE_BUILD ? "t2code" : "T3 Code");
 export const APP_STAGE_LABEL =
   injectedDesktopAppBranding?.stageLabel ??
   resolveWebAppStageLabel({
@@ -28,7 +33,9 @@ export const APP_STAGE_LABEL =
   });
 export const APP_DISPLAY_NAME =
   injectedDesktopAppBranding?.displayName ??
-  formatAppDisplayName({ baseName: APP_BASE_NAME, stageLabel: APP_STAGE_LABEL });
+  (IS_T2CODE_BUILD
+    ? APP_BASE_NAME
+    : formatAppDisplayName({ baseName: APP_BASE_NAME, stageLabel: APP_STAGE_LABEL }));
 export const APP_VERSION = import.meta.env.APP_VERSION || "0.0.0";
 export const DESKTOP_DOWNLOAD_URL = "https://t3.codes/download";
 // Redirects to the App Store or Google Play to match the phone that opens it.

@@ -42,6 +42,10 @@ on:
       runner:
         required: true
         type: string
+      job_timeout_minutes:
+        required: false
+        default: 0
+        type: number
       platform:
         required: true
         type: string
@@ -116,11 +120,27 @@ on:
       relay_url:
         required: true
         type: string
+      update_repository:
+        required: false
+        type: string
+      disable_auto_update:
+        required: false
+        default: false
+        type: boolean
+      t2code_build:
+        required: false
+        default: false
+        type: boolean
+      fork_release_version:
+        required: false
+        type: string
 
 # electron-builder leaves the default arch (x64) out of the unpacked app's
 # directory name.
 env:
   UNPACKED_DIR: ${{ inputs.platform }}-${{ inputs.arch != 'x64' && format('{0}-', inputs.arch) || '' }}unpacked
+  T3CODE_FORK_RELEASE_VERSION: ${{ inputs.fork_release_version }}
+  CLI_VERSION: ${{ inputs.fork_release_version || inputs.version }}
 
 permissions:
   # Windows builds read this run's artifact list to wait for the Linux CLI archive.
@@ -133,9 +153,10 @@ jobs:
     runs-on: ${{ inputs.runner }}
     # Windows waits for the Linux CLI archive inside its own budget (see
     # "Wait for Linux CLI archive"), so it gets that wait on top of the usual 30.
-    timeout-minutes: ${{ inputs.platform == 'win' && 70 || 30 }}
+    timeout-minutes: ${{ inputs.job_timeout_minutes || (inputs.platform == 'win' && 70 || 30) }}
     env:
       T3CODE_CLERK_PUBLISHABLE_KEY: ${{ inputs.clerk_publishable_key }}
+      T3CODE_T2CODE_BUILD: ${{ inputs.t2code_build }}
       T3CODE_CLERK_JWT_TEMPLATE: ${{ inputs.clerk_jwt_template }}
       T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ inputs.clerk_cli_oauth_client_id }}
       T3CODE_RELAY_URL: ${{ inputs.relay_url }}
@@ -287,6 +308,19 @@ jobs:
         with:
           tool: cargo-xwin@0.23.1
 
+      - name: Ensure the Windows cross-compiler is available
+        if: inputs.platform == 'win' && runner.os == 'Linux' && steps.resource_monitor_cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v clang >/dev/null || ! command -v lld-link >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y clang lld
+          fi
+          # cargo-xwin supplies its own clang-cl alias to clang on Linux.
+          command -v clang
+          command -v lld-link
+
       # Built here rather than inside the desktop build so the CLI archive,
       # which bundles the same binary, can be built and uploaded first.
       - name: Build resource monitor
@@ -318,6 +352,7 @@ jobs:
         run: |
           brand=production
           if [[ "${{ inputs.version }}" =~ -nightly\.[0-9]{8}\.[0-9]+$ ]]; then brand=nightly; fi
+          if [[ "$T3CODE_T2CODE_BUILD" == true ]]; then brand=t2code; fi
           node scripts/apply-web-brand-assets.ts "$brand" apps/server/dist/client
 
       - name: Resolve target Node.js for the CLI executable
@@ -480,7 +515,7 @@ jobs:
           node scripts/build-cli-archive.ts \
             --platform "${{ inputs.platform }}" \
             --arch "${{ inputs.arch }}" \
-            --version "${{ inputs.version }}" \
+            --version "$CLI_VERSION" \
             --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" \
             --output-dir release-cli \
             ${extra_args[@]+"${extra_args[@]}"}
@@ -488,7 +523,7 @@ jobs:
       - name: Smoke-test CLI archive
         if: inputs.cli_archive && inputs.verify_runner == ''
         shell: bash
-        run: node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "${{ inputs.version }}"
+        run: node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "$CLI_VERSION"
 
       # macOS uploads its archive after "Await CLI notarization" instead.
       - name: Upload CLI archive
@@ -588,6 +623,8 @@ jobs:
           T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: true
           T3CODE_DESKTOP_REUSE_LINUX_CAPTURE_HELPERS: ${{ steps.capture_helper_cache.outputs.cache-hit == 'true' }}
           T3CODE_DESKTOP_UNTRUSTED_BUNDLE: ${{ inputs.untrusted_bundle }}
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ inputs.update_repository }}
+          T3CODE_DESKTOP_DISABLE_AUTO_UPDATE: ${{ inputs.disable_auto_update }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
@@ -878,17 +915,21 @@ jobs:
 
       - name: Verify packaged natives
         shell: bash
+        env:
+          T2CODE_BUILD: ${{ inputs.t2code_build }}
         run: |
           set -euo pipefail
           tar -C verify -xf verify/unpacked.tar
+          args=()
+          if [[ "$T2CODE_BUILD" == true ]]; then args+=(--t2code-build); fi
           node verify/verify-windows-desktop-artifact.mjs \
             --app-dir "$(cygpath -w "$PWD/verify/$UNPACKED_DIR")" \
-            --arch "${{ inputs.arch }}" --build-version "${{ inputs.version }}" --verbose
+            --arch "${{ inputs.arch }}" --build-version "${{ inputs.version }}" --verbose "${args[@]}"
 
       - name: Smoke-test CLI archive
         if: inputs.cli_archive
         shell: bash
-        run: node verify/smoke-cli-archive.mjs --archive release-cli/* --expect-version "${{ inputs.version }}"
+        run: node verify/smoke-cli-archive.mjs --archive release-cli/* --expect-version "$CLI_VERSION"
 
       # cargo-xwin links this binary on Linux, and nothing else runs it before users do.
       # Node rather than pwsh: PowerShell on Windows ARM crashes intermittently

@@ -7,6 +7,12 @@ const CLI_RELEASE_REPOSITORY = "pingdotgg/t3code";
 export const CLI_RELEASES_PAGE_URL = `https://github.com/${CLI_RELEASE_REPOSITORY}/releases`;
 export const CLI_RELEASE_CHECKSUMS_FILE = "SHA256SUMS";
 export const CLI_RELEASE_BASE_URL_ENV = "T3CODE_RELEASE_BASE_URL";
+export const FORK_CLI_RELEASES_PAGE_URL = "https://github.com/WAcry/t2code/releases";
+export const FORK_CLI_RELEASE_BASE_URL = `${FORK_CLI_RELEASES_PAGE_URL}/download`;
+
+export function isForkCliReleaseVersion(version: string): boolean {
+  return /^\d+\.\d+\.\d+-nightly\.\d{8}\.\d+-pr28845\.\d+$/.test(version);
+}
 
 // Keep archive keys aligned with the Linux matrix, Windows ARM64 build, and cli_archive rows in release.yml,
 // and with the SSH runner's host check in packages/ssh/src/tunnel.ts.
@@ -64,7 +70,10 @@ export function cliReleaseAssetUrl(
   fileName: string,
   baseUrl: string | undefined = CLI_RELEASE_DEFAULT_BASE_URL,
 ): string {
-  return releaseAssetUrl(baseUrl?.trim() || CLI_RELEASE_DEFAULT_BASE_URL, `v${version}`, fileName);
+  const releaseBaseUrl = isForkCliReleaseVersion(version)
+    ? FORK_CLI_RELEASE_BASE_URL
+    : baseUrl?.trim() || CLI_RELEASE_DEFAULT_BASE_URL;
+  return releaseAssetUrl(releaseBaseUrl, `v${version}`, fileName);
 }
 
 export function parseChecksums(text: string): ReadonlyMap<string, string> {

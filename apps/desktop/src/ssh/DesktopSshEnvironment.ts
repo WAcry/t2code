@@ -3,7 +3,11 @@ import type {
   DesktopSshEnvironmentBootstrap,
   DesktopSshEnvironmentTarget,
 } from "@t3tools/contracts";
-import { CLI_RELEASE_BASE_URL_ENV } from "@t3tools/shared/cliRelease";
+import {
+  CLI_RELEASE_BASE_URL_ENV,
+  FORK_CLI_RELEASE_BASE_URL,
+  isForkCliReleaseVersion,
+} from "@t3tools/shared/cliRelease";
 import * as NetService from "@t3tools/shared/Net";
 import * as SshAuth from "@t3tools/ssh/auth";
 import { resolveSshTarget } from "@t3tools/ssh/command";
@@ -31,7 +35,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Option from "effect/Option";
 import serverPackageJson from "../../../server/package.json" with { type: "json" };
 
-import type * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 
 import * as DesktopSshPasswordPrompts from "./DesktopSshPasswordPrompts.ts";
 
@@ -82,12 +86,19 @@ export interface DesktopSshEnvironmentLayerOptions {
 export const resolveDesktopSshCliRunner = (
   environment: DesktopEnvironment.DesktopEnvironment["Service"],
   env: NodeJS.ProcessEnv,
+  forkReleaseVersion = DesktopEnvironment.T2CODE_FORK_RELEASE_VERSION,
 ): SshTunnel.RemoteT3RunnerOptions => {
   const devRemoteEntryPath = Option.getOrUndefined(environment.devRemoteT3ServerEntryPath);
   if (environment.isDevelopment && devRemoteEntryPath !== undefined) {
     return {
       nodeScriptPath: devRemoteEntryPath,
       nodeEngineRange: serverPackageJson.engines.node,
+    };
+  }
+  if (DesktopEnvironment.IS_T2CODE_BUILD || forkReleaseVersion !== "") {
+    return {
+      archiveVersion: isForkCliReleaseVersion(forkReleaseVersion) ? forkReleaseVersion : "",
+      releaseBaseUrl: FORK_CLI_RELEASE_BASE_URL,
     };
   }
   const releaseBaseUrl = env[CLI_RELEASE_BASE_URL_ENV]?.trim() || undefined;

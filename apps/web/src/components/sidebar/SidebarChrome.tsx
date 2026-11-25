@@ -5,6 +5,7 @@ import { memo } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
+import { APP_BASE_NAME, IS_T2CODE_BUILD } from "../../branding";
 import { cn } from "../../lib/utils";
 import { observeResize } from "../../lib/observeResize";
 import { useIssuesSupported, usePullRequestsSupported } from "../../state/environments";
@@ -67,7 +68,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
   const gt = useGT();
   return (
     <Link
-      aria-label={gt("T3 Code home")}
+      aria-label={IS_T2CODE_BUILD ? gt("Home") : gt("T3 Code home")}
       className={cn(
         "pointer-events-auto relative z-10 hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring [-webkit-app-region:no-drag] focus-visible:ring-2 focus-visible:ring-inset md:flex",
         onBackdrop ? "text-white light:text-foreground" : "text-foreground",
@@ -82,7 +83,11 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
 function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
   return (
     <span className="inline-flex min-w-0 items-baseline gap-1 text-label tracking-tight">
-      <T3Wordmark aria-label="T3" className="h-[1cap] w-auto shrink-0" />
+      <T3Wordmark
+        aria-label={IS_T2CODE_BUILD ? undefined : "T3"}
+        aria-hidden={IS_T2CODE_BUILD || undefined}
+        className="h-[1cap] w-auto shrink-0"
+      />
       <span
         className={cn(
           "truncate [text-box:trim-both_cap_alphabetic] supports-[text-box:trim-both_cap_alphabetic]:py-1",
@@ -90,7 +95,7 @@ function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
         )}
       >
         {/* oxlint-disable-next-line t3code/no-untranslated-copy -- product wordmark */}
-        {"Code"}
+        {IS_T2CODE_BUILD ? APP_BASE_NAME : "Code"}
       </span>
     </span>
   );

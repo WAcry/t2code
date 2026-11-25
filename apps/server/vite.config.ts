@@ -22,6 +22,7 @@ const repoEnv = loadRepoEnv();
 const serverManifestPath = NodePath.join(import.meta.dirname, "package.json");
 // The desktop packager passes APP_VERSION; it can equal the manifest at a commit tagged otherwise.
 const buildVersion =
+  repoEnv.T3CODE_FORK_RELEASE_VERSION?.trim() ||
   process.env.APP_VERSION?.trim() ||
   resolveTaggedSourceVersion(NodePath.join(import.meta.dirname, "../.."), packageJson.version);
 const cliBuildChannel = /^[^-+]+-(?:nightly|preview)\./.test(buildVersion) ? "nightly" : "latest";

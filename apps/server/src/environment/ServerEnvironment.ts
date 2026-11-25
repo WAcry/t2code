@@ -5,6 +5,7 @@ import {
   type ExecutionEnvironmentDescriptor,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { isForkCliReleaseVersion } from "@t3tools/shared/cliRelease";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
@@ -196,11 +197,13 @@ export const make = Effect.gen(function* () {
   const label = yield* resolveServerEnvironmentLabel({ cwdBaseName });
   const machine = yield* detectServerEnvironmentMachineKind();
   const launcher = yield* resolveServiceLauncherMode();
+  const forkRelease = isForkCliReleaseVersion(packageJson.version);
   const serverSelfUpdate = resolveServerSelfUpdateCapability({
     desktopManaged: serverConfig.mode === "desktop",
     launcherManaged: launcher.managed,
   });
-  const serverInstallation = serverSelfUpdate === null ? yield* resolveServerInstallation : null;
+  const serverInstallation =
+    !forkRelease && serverSelfUpdate === null ? yield* resolveServerInstallation : null;
   // The desktop reports whether it can install updates; requests travel over its control fd.
   const desktopAppUpdate =
     serverSelfUpdate === "desktop-managed" &&
@@ -285,7 +288,7 @@ export const make = Effect.gen(function* () {
       oneTimeSchedules: true,
       freshContext: true,
       scheduledTaskThreadModes: true,
-      npmReleaseLookup: true,
+      ...(!forkRelease ? { npmReleaseLookup: true } : {}),
       voiceTranscription: isSpeechPlatformSupported(hostPlatform, hostArchitecture, hostLibc),
       cloudVoiceTranscription: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
