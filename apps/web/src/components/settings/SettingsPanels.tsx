@@ -3,7 +3,7 @@ import { m as resolveMessage } from "~/i18n/messages";
 import { useAtomValue } from "@effect/atom-react";
 import { NotificationSettings } from "./NotificationSettings";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
-import { CheckIcon } from "lucide-react";
+import { CheckIcon, RotateCcwIcon } from "lucide-react";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
@@ -50,8 +50,6 @@ import {
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
 } from "../../components/desktopUpdate.logic";
-import { ProviderModelPicker } from "../chat/ProviderModelPicker";
-import { TraitsPicker } from "../chat/TraitsPicker";
 import { isElectron } from "../../env";
 import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
 import {
@@ -89,7 +87,6 @@ import {
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
-import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";
@@ -111,7 +108,6 @@ import {
   syncAutoSettleDaysField,
 } from "./SettingsPanels.logic";
 import {
-  SETTINGS_PICKER_TRIGGER_CLASSNAME,
   SettingResetButton,
   SettingsPageContainer,
   SettingsRow,
@@ -123,7 +119,9 @@ import { SUPPORTED_LOCALES } from "../../i18n/locales";
 import { BackgroundActivitySettingsRow } from "./BackgroundActivitySettings";
 import { AdvancedSettings } from "./AdvancedSettings";
 import { PullRequestLinksOpenInAppSetting } from "./IntegrationsSettings";
-import { StorageCleanupSections } from "./StorageSettings";
+import { StorageCleanupSections, WorktreeCleanupSection } from "./StorageSettings";
+import { InputGroup, InputGroupInput, InputGroupUnit } from "../ui/input-group";
+import { SettingsModelPicker } from "./SettingsModelPicker";
 import { UpdateTrackSwitchDialog } from "./UpdateTrackSwitchDialog";
 import { environmentIdsKey } from "~/state/environmentAtomList";
 import { environmentSessionStatesAtom } from "~/state/session";
@@ -352,7 +350,7 @@ function AboutVersionSection() {
               render={
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant="secondary"
                   disabled={buttonDisabled || isUpdateActionPending}
                   onClick={handleButtonClick}
                 >
@@ -418,7 +416,8 @@ function AboutVersionSection() {
               }}
             >
               <SelectTrigger
-                size="sm"
+                variant="well"
+                size="compact"
                 className="w-full sm:w-40"
                 aria-label={gt("Update track")}
                 disabled={switchChannel !== null || updateRun !== null}
@@ -426,11 +425,10 @@ function AboutVersionSection() {
                 <SelectValue>{channelSwitchLabel(selectedUpdateChannel, messages)}</SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="latest">
+                <SelectItem value="latest">
                   <T>Stable</T>
                 </SelectItem>
                 <SelectItem
-                  hideIndicator
                   value="nightly"
                   disabled={nightlyDeniedBy !== undefined && selectedUpdateChannel !== "nightly"}
                 >
@@ -454,14 +452,19 @@ function AboutVersionSection() {
                 );
               }}
             >
-              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label={gt("Update track")}>
+              <SelectTrigger
+                variant="well"
+                size="compact"
+                className="w-full sm:w-40"
+                aria-label={gt("Update track")}
+              >
                 <SelectValue>{HOSTED_APP_CHANNEL_LABEL}</SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="latest">
+                <SelectItem value="latest">
                   <T>Latest</T>
                 </SelectItem>
-                <SelectItem hideIndicator value="nightly">
+                <SelectItem value="nightly">
                   <T>Nightly</T>
                 </SelectItem>
               </SelectPopup>
@@ -477,7 +480,7 @@ function AboutVersionSection() {
   );
 }
 
-export function useSettingsRestore(onRestored?: () => void) {
+function useSettingsRestore(onRestored?: () => void) {
   const messages = useMessages();
   const gt = useGT();
   const {
@@ -488,6 +491,8 @@ export function useSettingsRestore(onRestored?: () => void) {
     setThemeHalf,
     clearThemeHalves,
     themeHalves,
+    blackChrome,
+    setBlackChrome,
   } = useTheme();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -502,11 +507,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(theme !== "system" ? [gt("Theme")] : []),
     ...(!followSystem ? [gt("Follow system")] : []),
     ...(themeHalves !== null ? [gt("Theme mix")] : []),
+    ...(blackChrome ? [gt("Black chrome")] : []),
     ...(settings.appearanceContrast !== DEFAULT_UNIFIED_SETTINGS.appearanceContrast
       ? [gt("Contrast")]
-      : []),
-    ...(settings.glassOpacity !== DEFAULT_UNIFIED_SETTINGS.glassOpacity
-      ? [gt("Glass opacity")]
       : []),
     ...(settings.diffColorScheme !== DEFAULT_UNIFIED_SETTINGS.diffColorScheme
       ? [gt("Diff colors")]
@@ -518,6 +521,7 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.mathRenderingEnabled !== DEFAULT_UNIFIED_SETTINGS.mathRenderingEnabled
       ? [gt("Render math")]
       : []),
+    ...(settings.surfaceStyle !== DEFAULT_UNIFIED_SETTINGS.surfaceStyle ? ["Style"] : []),
     ...(settings.panelAnimationDurationMs !== DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs
       ? [gt("Panel animations")]
       : []),
@@ -526,6 +530,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? [gt("Environment identification")]
       : []),
     ...(settings.language !== DEFAULT_UNIFIED_SETTINGS.language ? [gt("Language")] : []),
+    ...(settings.hideWindowControlsWhenSidebarCollapsed !==
+    DEFAULT_UNIFIED_SETTINGS.hideWindowControlsWhenSidebarCollapsed
+      ? [gt("Hide window controls")]
+      : []),
     ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
       ? [gt("Time format")]
       : []),
@@ -564,10 +572,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? [gt("Snooze options")]
       : []),
     ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? [gt("Word wrap")] : []),
-    ...(settings.persistComposerContextStrip !==
-    DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip
-      ? [gt("Composer context")]
-      : []),
     ...getChangedTypographySettingLabels(settings, messages),
     ...(settings.diffFilesCollapsed !== DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed
       ? [gt("Default diff file state")]
@@ -700,6 +704,11 @@ export function useSettingsRestore(onRestored?: () => void) {
       notifyThemeRestoreFailure();
       return;
     }
+    if (blackChrome && !setBlackChrome(false)) {
+      rollbackThemeState();
+      notifyThemeRestoreFailure();
+      return;
+    }
     if (needsFollowSystemReset && !setFollowSystem(true)) {
       rollbackThemeState();
       notifyThemeRestoreFailure();
@@ -712,11 +721,11 @@ export function useSettingsRestore(onRestored?: () => void) {
       effortDisplay: DEFAULT_UNIFIED_SETTINGS.effortDisplay,
       mathRenderingEnabled: DEFAULT_UNIFIED_SETTINGS.mathRenderingEnabled,
       language: DEFAULT_UNIFIED_SETTINGS.language,
+      surfaceStyle: DEFAULT_UNIFIED_SETTINGS.surfaceStyle,
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
       inAppNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
-      persistComposerContextStrip: DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip,
       diffFilesCollapsed: DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed,
       diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
       diffLayout: DEFAULT_UNIFIED_SETTINGS.diffLayout,
@@ -730,7 +739,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       screenReaderAnnouncements: DEFAULT_UNIFIED_SETTINGS.screenReaderAnnouncements,
       screenReaderWindowTitle: DEFAULT_UNIFIED_SETTINGS.screenReaderWindowTitle,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
-      glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
+      hideWindowControlsWhenSidebarCollapsed:
+        DEFAULT_UNIFIED_SETTINGS.hideWindowControlsWhenSidebarCollapsed,
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
@@ -815,30 +825,60 @@ function AutoSettleDaysInput({
   };
 
   return (
-    <Input
-      size="sm"
-      type="number"
-      min={MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS}
-      max={MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS}
-      className="w-full sm:w-24"
-      value={field.draft}
-      onChange={(event) => setField(editAutoSettleDaysField(field, event.target.value))}
-      onBlur={commit}
-      onKeyDown={(event) => {
-        if (event.nativeEvent.isComposing) return;
-        if (event.key === "Enter") commit();
-        if (event.key === "Escape" && field.dirty) {
-          // An unhandled Escape closes the settings page, and the blur that follows would save.
-          event.preventDefault();
-          event.stopPropagation();
-          setField(cancelAutoSettleDaysField(field));
-        }
-      }}
-      aria-label={gt("Days of inactivity before auto-settle")}
-    />
+    <InputGroup className="w-full sm:w-24">
+      <InputGroupInput
+        size="settings"
+        type="number"
+        min={MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS}
+        max={MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS}
+        value={field.draft}
+        onChange={(event) => setField(editAutoSettleDaysField(field, event.target.value))}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing) return;
+          if (event.key === "Enter") commit();
+          if (event.key === "Escape" && field.dirty) {
+            // An unhandled Escape closes the settings page, and the blur that follows would save.
+            event.preventDefault();
+            event.stopPropagation();
+            setField(cancelAutoSettleDaysField(field));
+          }
+        }}
+        aria-label={gt("Days of inactivity before auto-settle")}
+      />
+      <InputGroupUnit>{gt("days", { $context: "unit after a number of days" })}</InputGroupUnit>
+    </InputGroup>
   );
 }
 
+/** Restores every device setting from the settings and appearance headers. */
+export function RestoreDeviceDefaultsButton({ onRestored }: { onRestored?: () => void }) {
+  const gt = useGT();
+  const { changedSettingLabels, restoreDefaults } = useSettingsRestore(onRestored);
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className="inline-flex" />}>
+        <Button
+          size="standard"
+          variant="ghost"
+          aria-label={gt("Restore device defaults")}
+          disabled={changedSettingLabels.length === 0}
+          onClick={() => void restoreDefaults()}
+        >
+          <RotateCcwIcon className="size-3.5" />
+          <span className="max-sm:sr-only">
+            <T>Restore device defaults</T>
+          </span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipPopup side="bottom">
+        {changedSettingLabels.length === 0
+          ? gt("Device settings already use their defaults.")
+          : gt("Restore device defaults")}
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
 export function GeneralSettingsPanel() {
   const gt = useGT();
   const m = useMessages();
@@ -858,12 +898,7 @@ export function GeneralSettingsPanel() {
         <NotificationSettings />
         <SettingsRow
           {...setting("in-app-notifications")}
-          description={
-            <T>
-              Show a toast when another thread finishes, fails, or needs input or approval while
-              this app has focus.
-            </T>
-          }
+          description={<T>Show a toast when another thread finishes, fails, or needs you.</T>}
           control={
             <Switch
               checked={settings.inAppNotificationsEnabled}
@@ -935,14 +970,19 @@ export function GeneralSettingsPanel() {
                 }
               }}
             >
-              <SelectTrigger size="sm" className="w-full sm:w-44" aria-label={gt("Project order")}>
+              <SelectTrigger
+                variant="well"
+                size="compact"
+                className="w-full sm:w-44"
+                aria-label={gt("Project order")}
+              >
                 <SelectValue>
                   {m(SIDEBAR_PROJECT_SORT_ORDER_LABELS[settings.sidebarProjectSortOrder])}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 {SidebarProjectSortOrder.literals.map((sortOrder) => (
-                  <SelectItem hideIndicator key={sortOrder} value={sortOrder}>
+                  <SelectItem key={sortOrder} value={sortOrder}>
                     {m(SIDEBAR_PROJECT_SORT_ORDER_LABELS[sortOrder])}
                   </SelectItem>
                 ))}
@@ -1011,9 +1051,7 @@ export function GeneralSettingsPanel() {
         />
         <SettingsRow
           {...setting("archive-confirmation")}
-          description={
-            <T>Require a second click on the inline archive action before a thread is archived.</T>
-          }
+          description={<T>Click archive twice before a thread is archived.</T>}
           resetAction={
             settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive ? (
               <SettingResetButton
@@ -1110,7 +1148,8 @@ export function GeneralSettingsPanel() {
                 }}
               >
                 <SelectTrigger
-                  size="sm"
+                  variant="well"
+                  size="compact"
                   className="w-full sm:w-40"
                   aria-label={gt("Quit shortcut behavior")}
                 >
@@ -1120,7 +1159,7 @@ export function GeneralSettingsPanel() {
                 </SelectTrigger>
                 <SelectPopup align="end" alignItemWithTrigger={false}>
                   {Object.entries(QUIT_CONFIRMATION_MODE_LABELS).map(([value, label]) => (
-                    <SelectItem hideIndicator key={value} value={value}>
+                    <SelectItem key={value} value={value}>
                       {m(label)}
                     </SelectItem>
                   ))}
@@ -1156,7 +1195,12 @@ export function GeneralSettingsPanel() {
                 }
               }}
             >
-              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label={gt("Language")}>
+              <SelectTrigger
+                variant="well"
+                size="compact"
+                className="w-full sm:w-40"
+                aria-label={gt("Language")}
+              >
                 <SelectValue>
                   {languageValue === SYSTEM_LANGUAGE
                     ? m(TIMESTAMP_FORMAT_LABELS.locale)
@@ -1164,11 +1208,9 @@ export function GeneralSettingsPanel() {
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value={SYSTEM_LANGUAGE}>
-                  {m(TIMESTAMP_FORMAT_LABELS.locale)}
-                </SelectItem>
+                <SelectItem value={SYSTEM_LANGUAGE}>{m(TIMESTAMP_FORMAT_LABELS.locale)}</SelectItem>
                 {SUPPORTED_LOCALES.map((locale) => (
-                  <SelectItem hideIndicator key={locale} value={locale}>
+                  <SelectItem key={locale} value={locale}>
                     {nativeLanguageName(locale)}
                   </SelectItem>
                 ))}
@@ -1201,22 +1243,17 @@ export function GeneralSettingsPanel() {
               }}
             >
               <SelectTrigger
-                size="sm"
+                variant="well"
+                size="compact"
                 className="w-full sm:w-40"
                 aria-label={gt("Timestamp format")}
               >
                 <SelectValue>{m(TIMESTAMP_FORMAT_LABELS[settings.timestampFormat])}</SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="locale">
-                  {m(TIMESTAMP_FORMAT_LABELS.locale)}
-                </SelectItem>
-                <SelectItem hideIndicator value="12-hour">
-                  {m(TIMESTAMP_FORMAT_LABELS["12-hour"])}
-                </SelectItem>
-                <SelectItem hideIndicator value="24-hour">
-                  {m(TIMESTAMP_FORMAT_LABELS["24-hour"])}
-                </SelectItem>
+                <SelectItem value="locale">{m(TIMESTAMP_FORMAT_LABELS.locale)}</SelectItem>
+                <SelectItem value="12-hour">{m(TIMESTAMP_FORMAT_LABELS["12-hour"])}</SelectItem>
+                <SelectItem value="24-hour">{m(TIMESTAMP_FORMAT_LABELS["24-hour"])}</SelectItem>
               </SelectPopup>
             </Select>
           }
@@ -1292,7 +1329,8 @@ export function ChatSettingsPanel() {
               }}
             >
               <SelectTrigger
-                size="sm"
+                variant="well"
+                size="compact"
                 className="w-auto min-w-0 max-w-full"
                 aria-label={gt("Send shortcut")}
               >
@@ -1319,9 +1357,7 @@ export function ChatSettingsPanel() {
         <AdvancedSettings targetIds={[setting("skills-in-slash-menu").id]}>
           <SettingsRow
             {...setting("skills-in-slash-menu")}
-            description={gt(
-              "Also include skills in the / command menu. Skills always appear when you type $.",
-            )}
+            description={gt("Include skills in the / command menu.")}
             resetAction={
               settings.showSkillsInSlashMenu !== DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu ? (
                 <SettingResetButton
@@ -1388,7 +1424,8 @@ export function ChatSettingsPanel() {
               }}
             >
               <SelectTrigger
-                size="sm"
+                variant="well"
+                size="compact"
                 className="w-auto min-w-0"
                 aria-label={gt("Follow-up behavior")}
               >
@@ -1660,7 +1697,12 @@ function DiffColorsSettingsRow() {
                 updateSettings({ diffColorScheme: value });
             }}
           >
-            <SelectTrigger size="sm" className="w-full min-w-0" aria-label={gt("Diff colors")}>
+            <SelectTrigger
+              variant="well"
+              size="compact"
+              className="w-full min-w-0"
+              aria-label={gt("Diff colors")}
+            >
               <span
                 aria-hidden="true"
                 className={
@@ -1705,9 +1747,7 @@ export function DiffsSettingsPanel() {
       <SettingsSection id="diffs" title={gt("Diffs")}>
         <SettingsRow
           {...setting("diff-layout")}
-          description={gt(
-            "Show diffs stacked or side by side. The toggle in the diff toolbar changes this too.",
-          )}
+          description={gt("Show diffs stacked or side by side.")}
           resetAction={
             settings.diffLayout !== DEFAULT_UNIFIED_SETTINGS.diffLayout ? (
               <SettingResetButton
@@ -1725,16 +1765,17 @@ export function DiffsSettingsPanel() {
                 }
               }}
             >
-              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label={gt("Diff layout")}>
+              <SelectTrigger
+                variant="well"
+                size="compact"
+                className="w-full sm:w-40"
+                aria-label={gt("Diff layout")}
+              >
                 <SelectValue>{messages(DIFF_LAYOUT_LABELS[settings.diffLayout])}</SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="stacked">
-                  {messages(DIFF_LAYOUT_LABELS.stacked)}
-                </SelectItem>
-                <SelectItem hideIndicator value="split">
-                  {messages(DIFF_LAYOUT_LABELS.split)}
-                </SelectItem>
+                <SelectItem value="stacked">{messages(DIFF_LAYOUT_LABELS.stacked)}</SelectItem>
+                <SelectItem value="split">{messages(DIFF_LAYOUT_LABELS.split)}</SelectItem>
               </SelectPopup>
             </Select>
           }
@@ -1766,9 +1807,7 @@ export function DiffsSettingsPanel() {
         />
         <SettingsRow
           {...setting("default-diff-file-state")}
-          description={gt(
-            "Start with files expanded or collapsed when opening diffs or a pull request's Code tab.",
-          )}
+          description={gt("Start diff files expanded or collapsed.")}
           resetAction={
             settings.diffFilesCollapsed !== DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed ? (
               <SettingResetButton
@@ -1791,7 +1830,8 @@ export function DiffsSettingsPanel() {
               }}
             >
               <SelectTrigger
-                size="sm"
+                variant="well"
+                size="compact"
                 className="w-full sm:w-40"
                 aria-label={gt("Default diff file state")}
               >
@@ -1800,10 +1840,10 @@ export function DiffsSettingsPanel() {
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="expanded">
+                <SelectItem value="expanded">
                   <T>Expanded</T>
                 </SelectItem>
-                <SelectItem hideIndicator value="collapsed">
+                <SelectItem value="collapsed">
                   <T>Collapsed</T>
                 </SelectItem>
               </SelectPopup>
@@ -1816,9 +1856,7 @@ export function DiffsSettingsPanel() {
       <SettingsSection id="pull-requests" title={gt("Pull requests")}>
         <SettingsRow
           {...setting("proactive-panels")}
-          description={gt(
-            "Open linked pull requests first. Otherwise, open Changes for edits to at least 3 files or 50 lines.",
-          )}
+          description={gt("Open the linked pull request, or Changes for larger edits.")}
           resetAction={
             settings.proactivePanelsEnabled !== DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled ? (
               <SettingResetButton
@@ -1895,7 +1933,8 @@ function ScopedCompactIdleThreadsRow() {
           }}
         >
           <SelectTrigger
-            size="sm"
+            variant="well"
+            size="compact"
             className="w-full sm:w-56"
             aria-label={gt("Compact idle threads")}
           >
@@ -1912,7 +1951,6 @@ function ScopedCompactIdleThreadsRow() {
           <SelectPopup align="end" alignItemWithTrigger={false}>
             {IDLE_COMPACTION_MODES.map((mode) => (
               <SelectItem
-                hideIndicator
                 key={mode.value}
                 value={mode.value}
                 // A server from before modes has only the on/off switch, so it cannot store "Never".
@@ -2014,7 +2052,7 @@ export function ThreadsSettingsPanel() {
           }
           control={
             <DraftInput
-              size="sm"
+              size="settings"
               className="w-full sm:w-72"
               value={mixedAddProjectBaseDirectory ? "" : settings.addProjectBaseDirectory}
               onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
@@ -2230,83 +2268,80 @@ export function ThreadsSettingsPanel() {
                 <T>Connect an environment to choose its text generation model.</T>
               </span>
             ) : !hasTextGenerationProvider ? (
-              <span className="text-sm text-muted-foreground">
+              <span className="text-body text-muted-foreground">
                 <T>No text generation providers available.</T>
               </span>
             ) : (
-              <div className="flex flex-wrap items-center justify-end gap-1.5">
-                <ProviderModelPicker
-                  environmentId={environmentId}
-                  activeInstanceId={textGenInstanceId}
-                  model={textGenModel}
-                  lockedProvider={null}
-                  instanceEntries={textGenerationModelInstanceEntries}
-                  modelOptionsByInstance={textGenerationModelOptionsByInstance}
-                  triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-                  {...(mixedTextGenerationModel ? { triggerLabel: gt("Mixed") } : {})}
-                  getModelDisabledReason={textGenerationModelDisabledReason}
-                  {...(environmentId
+              <SettingsModelPicker
+                environmentId={environmentId}
+                activeInstanceId={textGenInstanceId}
+                model={textGenModel}
+                instanceEntries={textGenerationModelInstanceEntries}
+                modelOptionsByInstance={textGenerationModelOptionsByInstance}
+                {...(mixedTextGenerationModel ? { triggerLabel: gt("Mixed") } : {})}
+                getModelDisabledReason={textGenerationModelDisabledReason}
+                {...(environmentId
+                  ? {
+                      onOpenProviderSetup: (instanceId: ProviderInstanceId) => {
+                        void navigate({
+                          to: "/settings/providers",
+                          search: { environmentId, instanceId },
+                        });
+                      },
+                    }
+                  : {})}
+                onInstanceModelChange={(instanceId, model) => {
+                  const reason = textGenerationModelDisabledReason(instanceId, model);
+                  if (reason) {
+                    toastManager.add({
+                      type: "error",
+                      title: gt("Text generation model not saved"),
+                      description: reason,
+                    });
+                    return;
+                  }
+                  updateSettings({
+                    textGenerationModelSelection: resolveAppModelSelectionState(
+                      {
+                        ...settings,
+                        textGenerationModelSelection: pickModelSelection(
+                          textGenerationModelSelection,
+                          instanceId,
+                          model,
+                        ),
+                      },
+                      textGenerationProviders,
+                    ),
+                  });
+                }}
+                traits={
+                  textGenInstanceEntry && !mixedTextGenerationModel
                     ? {
-                        onOpenProviderSetup: (instanceId: ProviderInstanceId) => {
-                          void navigate({
-                            to: "/settings/providers",
-                            search: { environmentId, instanceId },
+                        provider: textGenProvider,
+                        // The exact instance's models, so a custom text-gen
+                        // instance like `codex_personal` gets its own list.
+                        models: textGenInstanceEntry.models,
+                        modelOptions: textGenModelOptions,
+                        includePlanAgent: selectsPlanAgent(textGenModelOptions),
+                        onModelOptionsChange: (nextOptions) => {
+                          updateSettings({
+                            textGenerationModelSelection: resolveAppModelSelectionState(
+                              {
+                                ...settings,
+                                textGenerationModelSelection: createModelSelection(
+                                  textGenInstanceId,
+                                  textGenModel,
+                                  nextOptions,
+                                ),
+                              },
+                              textGenerationProviders,
+                            ),
                           });
                         },
                       }
-                    : {})}
-                  onInstanceModelChange={(instanceId, model) => {
-                    const reason = textGenerationModelDisabledReason(instanceId, model);
-                    if (reason) {
-                      toastManager.add({
-                        type: "error",
-                        title: gt("Text generation model not saved"),
-                        description: reason,
-                      });
-                      return;
-                    }
-                    updateSettings({
-                      textGenerationModelSelection: resolveAppModelSelectionState(
-                        {
-                          ...settings,
-                          textGenerationModelSelection: pickModelSelection(
-                            textGenerationModelSelection,
-                            instanceId,
-                            model,
-                          ),
-                        },
-                        textGenerationProviders,
-                      ),
-                    });
-                  }}
-                />
-                {textGenInstanceEntry ? (
-                  <TraitsPicker
-                    provider={textGenProvider}
-                    models={textGenInstanceEntry?.models ?? []}
-                    model={textGenModel}
-                    modelOptions={textGenModelOptions}
-                    allowPromptInjectedEffort={false}
-                    includePlanAgent={selectsPlanAgent(textGenModelOptions)}
-                    triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-                    onModelOptionsChange={(nextOptions) => {
-                      updateSettings({
-                        textGenerationModelSelection: resolveAppModelSelectionState(
-                          {
-                            ...settings,
-                            textGenerationModelSelection: createModelSelection(
-                              textGenInstanceId,
-                              textGenModel,
-                              nextOptions,
-                            ),
-                          },
-                          textGenerationProviders,
-                        ),
-                      });
-                    }}
-                  />
-                ) : null}
-              </div>
+                    : null
+                }
+              />
             )
           }
         />
@@ -2345,7 +2380,8 @@ export function ThreadsSettingsPanel() {
                 }}
               >
                 <SelectTrigger
-                  size="sm"
+                  variant="well"
+                  size="compact"
                   className="w-full sm:w-56"
                   aria-label={gt("Response streaming")}
                 >
@@ -2356,10 +2392,10 @@ export function ThreadsSettingsPanel() {
                   </SelectValue>
                 </SelectTrigger>
                 <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem hideIndicator value="turn">
+                  <SelectItem value="turn">
                     {messages(RESPONSE_STREAMING_MODE_LABELS.turn)}
                   </SelectItem>
-                  <SelectItem hideIndicator value="paragraph">
+                  <SelectItem value="paragraph">
                     {messages(RESPONSE_STREAMING_MODE_LABELS.paragraph)}
                   </SelectItem>
                 </SelectPopup>
@@ -2383,7 +2419,9 @@ export function MaintenanceSettingsPanel() {
   const hasServerTargets = connectedEnvironments.length > 0;
 
   return (
-    <SettingsPageContainer>
+    <SettingsPageContainer className="max-w-[688px]">
+      <WorktreeCleanupSection title={gt("Worktrees")} />
+      <StorageCleanupSections />
       <SettingsSection id="updates" title={gt("Updates")}>
         <SettingsRow
           serverScoped
@@ -2420,9 +2458,7 @@ export function MaintenanceSettingsPanel() {
           {...setting("continue-threads-after-server-update")}
           serverScoped
           settingKeys={["continueThreadsAfterServerUpdate"]}
-          description={gt(
-            "Automatically resume interrupted threads after an update, crash, or machine restart on the selected environments.",
-          )}
+          description={gt("Resume interrupted threads after an update, crash, or restart.")}
           status={
             !hasServerTargets
               ? gt("All selected connected environments must support restart continuation.")
@@ -2492,8 +2528,6 @@ export function MaintenanceSettingsPanel() {
         />
       </SettingsSection>
 
-      <StorageCleanupSections />
-
       <SettingsSection id="diagnostics-section" title={gt("Diagnostics")}>
         <SettingsRow
           {...setting("diagnostics")}
@@ -2508,7 +2542,7 @@ export function MaintenanceSettingsPanel() {
                 <Link to="/settings/diagnostics" search={{ machine: environmentId ?? undefined }} />
               }
               size="sm"
-              variant="outline"
+              variant="secondary"
             >
               <T>View diagnostics</T>
             </Button>
@@ -2544,7 +2578,7 @@ export function AboutSettingsPanel() {
                     <a href={primaryPolicy.supportUrl} target="_blank" rel="noreferrer noopener" />
                   }
                   size="sm"
-                  variant="outline"
+                  variant="secondary"
                 >
                   <T>Get help</T>
                 </Button>
@@ -2569,7 +2603,7 @@ export function AboutSettingsPanel() {
             {...setting("welcome-page")}
             description={gt("See your agents, import projects, and set up your phone.")}
             control={
-              <Button size="sm" variant="outline" render={<Link to="/welcome" />}>
+              <Button size="sm" variant="secondary" render={<Link to="/welcome" />}>
                 <T context="verb, opens a page">Open</T>
               </Button>
             }
@@ -2589,7 +2623,7 @@ export function AboutSettingsPanel() {
             <Button
               render={<a href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer noopener" />}
               size="sm"
-              variant="outline"
+              variant="secondary"
             >
               <T>View policy</T>
             </Button>
@@ -2602,7 +2636,7 @@ export function AboutSettingsPanel() {
             <Button
               render={<Link to="/settings/open-source-licenses" />}
               size="sm"
-              variant="outline"
+              variant="secondary"
             >
               <T>View licenses</T>
             </Button>
