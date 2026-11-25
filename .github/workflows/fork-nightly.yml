@@ -227,7 +227,7 @@ jobs:
             rust_target: x86_64-apple-darwin
             resource_key: darwin-x64
           - label: macOS arm64
-            runner: macos-26
+            runner: xcode-27
             platform: mac
             target: dmg
             arch: arm64
