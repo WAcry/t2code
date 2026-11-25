@@ -11,6 +11,8 @@
 
 普通 CI 在 fork 上使用 GitHub 托管的 Ubuntu 和 macOS runner。同步上游时，新加的 CI job 也应能在 fork 的 runner 上运行。可在 `Changes` job 的 “Set up job” 步骤核对实际分配的 runner。[CI 运行记录](https://github.com/WAcry/t2code/actions/workflows/ci.yml)
 
+如果推送后没有生成运行记录，手动触发也返回 HTTP 422 `Actions has been disabled for this repository`，请打开仓库的 Actions 首页。即使设置 API 显示 `enabled: true`、单个工作流显示 `active`，首页也可能提示 `Workflows on this fork have been disabled`。仓库管理员可点击 `I understand my workflows, go ahead and re-enable them` 恢复，再重新触发所需工作流。[Actions 首页](https://github.com/WAcry/t2code/actions)
+
 ## 准备候选
 
 在以 fork 为 `origin` 的工作区运行，需要 Git 2.45 或更新版本、Node 24 或更新版本，以及 GitHub CLI。
