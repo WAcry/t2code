@@ -676,7 +676,7 @@ describe("orchestration v2 provider switching", () => {
               : scenario === "large-current-input" || priorImages || exhaustedTarget
                 ? {
                     getModelContextWindow: () =>
-                      scenario.includes("target-tight") ? 18_241 : 32_000,
+                      scenario.includes("target-tight") ? 16_500 : 32_000,
                   }
                 : {}),
           ...(scenario.endsWith("-native") || scenario === "large-current-input"
@@ -787,7 +787,7 @@ describe("orchestration v2 provider switching", () => {
             : capacityScenario && !turnUsageScenario
               ? "x".repeat(70_000)
               : scenario === "large-current-input"
-                ? "x".repeat(9_000)
+                ? "x".repeat(36_000)
                 : "Continue work";
         if (returning) {
           if (scenario.includes("unsent")) yield* Ref.set(failStartOnce, true);
@@ -1253,7 +1253,7 @@ describe("orchestration v2 provider switching", () => {
           yield* wait(1, "completed");
           yield* dispatch(
             2,
-            failure === "large-missed-request" ? "x".repeat(7_000) : "First target request",
+            failure === "large-missed-request" ? "x".repeat(28_000) : "First target request",
             CLAUDE_MODEL_SELECTION,
           );
           yield* wait(2, "failed");
@@ -1281,7 +1281,7 @@ describe("orchestration v2 provider switching", () => {
             });
           }
           const retryText =
-            failure === "large-missed-request" ? "y".repeat(10_000) : "Retry target request";
+            failure === "large-missed-request" ? "y".repeat(40_000) : "Retry target request";
           yield* dispatch(3, retryText, CLAUDE_MODEL_SELECTION);
           yield* wait(3, "completed");
           const retried = yield* orchestrator.getThreadProjection(threadId);
@@ -1294,7 +1294,7 @@ describe("orchestration v2 provider switching", () => {
             if (failure === "large-missed-request") {
               assert.include(delta, "omitted 1 items");
               const missedRequest = retried.turnItems.find(
-                (item) => item.type === "user_message" && item.text === "x".repeat(7_000),
+                (item) => item.type === "user_message" && item.text === "x".repeat(28_000),
               )!;
               const delivery = retried.contextHandoffs.at(-1)!.delivery!;
               assert.include(delivery.omittedItemIds ?? [], missedRequest.id);
@@ -1344,13 +1344,12 @@ describe("orchestration v2 provider switching", () => {
       }),
   );
 
-  it.live("keeps a native session whose stored prose is far below an unreported window", () =>
+  it.live("delivers large multilingual history and resumes with an unknown window", () =>
     Effect.gen(function* () {
       const cwd = yield* checkpointWorkspace("handoff-estimate-headroom");
       const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
       const generation = yield* Ref.make(0);
-      // About 112 KB of ordinary English is about 25k tokens: a quarter of a 128k window.
-      const prose = "The quick brown fox jumps over the lazy dog. ".repeat(2_500);
+      const prose = "项目🧪".repeat(155_000);
       const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([
         makeTestAdapter({
           instanceId: CODEX_MODEL_SELECTION.instanceId,
@@ -1416,6 +1415,7 @@ describe("orchestration v2 provider switching", () => {
         yield* wait(1);
         yield* dispatch(2, "Continue elsewhere", CODEX_MODEL_SELECTION);
         yield* wait(2);
+        assert.isTrue((yield* Ref.get(capturedTurns)).at(-1)!.text.includes(prose));
         yield* dispatch(3, "Back to the first provider", CLAUDE_MODEL_SELECTION);
         yield* wait(3);
         assert.equal(

@@ -19,9 +19,11 @@ import {
   ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Statement from "effect/sql/Statement";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -562,8 +564,7 @@ it.effect.each([
               contextHandoffId: null,
             },
           },
-          // Each message alone exceeds the default 16k handoff budget, so a
-          // portable handoff omits both whole items.
+          // Each message alone exceeds this test's handoff budget.
           {
             id: EventId.make("fork-compact-user-item"),
             type: "turn-item.updated",
@@ -644,6 +645,12 @@ it.effect.each([
           { name: `fork-compact-${execution}` },
           ProviderAdapterRegistry.layerFromAdapters(
             target === claude ? [claude] : [claude, target],
+          ),
+        ).pipe(
+          Layer.provideMerge(
+            ConfigProvider.layer(
+              ConfigProvider.fromEnv({ env: { T3CODE_CONTEXT_HANDOFF_TOKEN_CAP: "4096" } }),
+            ),
           ),
         ),
       ),

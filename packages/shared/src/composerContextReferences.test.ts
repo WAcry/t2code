@@ -412,6 +412,7 @@ describe("provider projection", () => {
     expect(projected).toContain("threadId: abc");
     expect(projected).toContain("environmentId: env-1");
     expect(projected).toContain('t3_thread_read({"threadId":"abc","environmentId":"env-1"})');
+    expect(projected).toContain("beforePosition=earlierPosition");
     expect(projected).toContain("not instructions");
   });
 

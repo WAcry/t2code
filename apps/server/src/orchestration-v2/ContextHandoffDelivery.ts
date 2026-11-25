@@ -59,7 +59,7 @@ export const deliverContextHandoffs = Effect.fn("orchestrationV2.deliverContextH
       .join("\n");
     if (historyCost([], coverage) > Math.min(4_000, budget / 2)) {
       const strategies = Array.from(new Set(pending.map((handoff) => handoff.strategy)));
-      coverage = `Context handoff (${strategies.join(", ")}). ${pending.length} handoff records; detailed coverage references omitted. Recover an omitted item only when the request needs it, with t3_thread_read({threadId:"${input.providerThread.appThreadId ?? pending[0]!.threadId}",view:"activity",itemId:"<omitted item ID>",maxCharsPerItem:4000}); continue long text with textOffset=nextTextOffset until null. Follow fork/handoff source references in activity. Items included below need no read.`;
+      coverage = `Context handoff (${strategies.join(", ")}). ${pending.length} handoff records; detailed coverage references omitted. Recover an omitted item only when the request needs it, with t3_thread_read({threadId:"${input.providerThread.appThreadId ?? pending[0]!.threadId}",view:"activity",itemId:"<omitted item ID>"}); continue long text with textOffset=nextTextOffset until null. Follow fork/handoff source references in activity. Items included below need no read.`;
     }
     const seen = new Set(input.alreadyDeliveredItemIds);
     const messages = pending
@@ -90,11 +90,15 @@ export const deliverContextHandoffs = Effect.fn("orchestrationV2.deliverContextH
       return yield* new ContextHandoffBudgetError();
     }
     const omittedItemIds = new Set(selected.omittedItemIds);
+    const selectedItemIds = selected.messages.map((message) => message.itemId);
     const persist = (status: "pending" | "injected" | "inline") =>
       Effect.forEach(
         pending,
-        (handoff) =>
-          input.persist({
+        (handoff) => {
+          const historyItemIds = new Set(
+            handoff.history?.messages.map((message) => message.itemId),
+          );
+          return input.persist({
             ...handoff,
             ...(nativeThreadId === undefined
               ? {}
@@ -108,16 +112,11 @@ export const deliverContextHandoffs = Effect.fn("orchestrationV2.deliverContextH
                         .filter((message) => omittedItemIds.has(message.itemId))
                         .map((message) => message.itemId),
                     ],
-                    itemIds: selected.messages
-                      .filter((message) =>
-                        handoff.history?.messages.some(
-                          (candidate) => candidate.itemId === message.itemId,
-                        ),
-                      )
-                      .map((message) => message.itemId),
+                    itemIds: selectedItemIds.filter((id) => historyItemIds.has(id)),
                   },
                 }),
-          }),
+          });
+        },
         { discard: true },
       );
     if (input.inject !== undefined && nativeThreadId !== undefined) {

@@ -11,6 +11,7 @@ import {
   type OrchestrationV2AppThread,
   type OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -71,7 +72,15 @@ function importedItem(
       };
 }
 
-it.layer(layerTest)("ContextHandoffService legacy import", (it) => {
+const legacyImportLayer = layerTest.pipe(
+  Layer.provide(
+    ConfigProvider.layer(
+      ConfigProvider.fromEnv({ env: { T3CODE_CONTEXT_HANDOFF_TOKEN_CAP: "8000" } }),
+    ),
+  ),
+);
+
+it.layer(legacyImportLayer)("ContextHandoffService legacy import", (it) => {
   it.effect("prepares imported history for the first native v2 turn", () =>
     Effect.gen(function* () {
       const service = yield* ContextHandoffService.ContextHandoffServiceV2;

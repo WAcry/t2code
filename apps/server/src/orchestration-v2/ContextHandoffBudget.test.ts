@@ -13,15 +13,19 @@ import {
   type OrchestrationV2HistoricalMessage,
   type OrchestrationV2ProviderThread,
 } from "@t3tools/contracts";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
   contextUsageForHandoff,
+  estimateTextTokens,
   handoffBudget,
   handoffCoverage,
+  handoffTokenCapConfig,
   historyCost,
   historyResponseItems,
+  renderHistory,
   selectHistory,
   historicalMessage,
 } from "@t3tools/provider-core/server/handoffBudget";
@@ -176,11 +180,11 @@ describe("handoff budget", () => {
     const selected = selectHistory({
       messages: candidates,
       coverage: "thread:handoff runs 1-4",
-      budget: 3_000,
+      budget: 750,
     });
     assert.deepEqual(selected.messages, messages);
     assert.equal(selected.omittedItems, 2);
-    assert.isAtMost(historyCost(selected.messages, selected.context), 3_000);
+    assert.isAtMost(historyCost(selected.messages, selected.context), 750);
   });
 
   it("points history recovery at the omitted items instead of a read from the thread's start", () => {
@@ -192,13 +196,13 @@ describe("handoff budget", () => {
         ...Array.from({ length: 3 }, (_, i) => message(`item:recent-${i}`, "assistant", "recent")),
       ],
       coverage: handoffCoverage({ threadId, coveredRunOrdinals: { from: 1, to: 46 }, items: [] }),
-      budget: 3_000,
+      budget: 750,
     });
     assert.deepEqual(selected.omittedItemIds, [omitted.itemId]);
     assert.include(selected.context, omitted.itemId);
   });
 
-  it("counts JSON escaping and UTF-8 bytes across many messages", () => {
+  it("counts UTF-16 code units after JSON escaping across many messages", () => {
     const candidates = Array.from({ length: 500 }, (_, i) =>
       message(`item:${i}`, i % 2 ? "assistant" : "user", '\u0000\\"🧪界'.repeat(15)),
     );
@@ -209,6 +213,14 @@ describe("handoff budget", () => {
         budget,
       });
       assert.isAtMost(historyCost(selected.messages, selected.context), budget);
+      assert.isAtMost(
+        JSON.stringify(historyResponseItems(selected.messages, selected.context)).length,
+        budget * 4,
+      );
+      assert.isAtMost(
+        JSON.stringify(renderHistory(selected.messages, selected.context)).length,
+        budget * 4,
+      );
       assert.isAbove(selected.omittedItems, 0);
     }
   });
@@ -217,7 +229,7 @@ describe("handoff budget", () => {
     const candidates = Array.from({ length: 20 }, (_, index) =>
       message(`boundary:${index}`, "user", "Short request"),
     );
-    for (let budget = 4_000; budget <= 9_000; budget++) {
+    for (let budget = 1_000; budget <= 2_250; budget++) {
       const selected = selectHistory({
         messages: candidates,
         coverage: "Recover history",
@@ -239,7 +251,8 @@ describe("handoff budget", () => {
     };
     assert.isBelow(handoffBudget(base), 16_000);
     assert.isBelow(handoffBudget({ ...base, nativeContextEstimate: 8_000 }), handoffBudget(base));
-    assert.equal(handoffBudget({ ...base, userText: "界".repeat(30_000) }), 0);
+    assert.equal(handoffBudget({ ...base, userText: "界".repeat(30_000) }), 8_499);
+    assert.equal(handoffBudget({ ...base, userText: "界".repeat(64_000) }), 0);
     assert.equal(
       handoffBudget({
         ...base,
@@ -282,9 +295,9 @@ describe("handoff budget", () => {
     assert.equal(handoffBudget({ ...base, tokenCap: 2_000 }), 2_000);
     // The work reserve never takes more than half of a small local window.
     for (const [modelContextWindow, nativeContextEstimate, expected] of [
-      [8_192, 0, 4_086],
-      [32_768, 0, 16_758],
-      [131_072, 50_000, 48_294],
+      [8_192, 0, 4_093],
+      [32_768, 0, 16_765],
+      [131_072, 50_000, 48_301],
     ] as const) {
       assert.equal(
         handoffBudget({ ...base, tokenCap: 64_000, modelContextWindow, nativeContextEstimate }),
@@ -292,6 +305,39 @@ describe("handoff budget", () => {
       );
     }
   });
+
+  it.effect("fits large intact history in the default and configured allowances", () =>
+    Effect.gen(function* () {
+      const parseCap = (env: Record<string, string>) =>
+        handoffTokenCapConfig.parse(ConfigProvider.fromEnv({ env }));
+      const defaultCap = yield* parseCap({});
+      assert.equal(defaultCap, 160_000);
+      const maximumCap = yield* parseCap({ T3CODE_CONTEXT_HANDOFF_TOKEN_CAP: "1000000" });
+      assert.equal(maximumCap, 250_000);
+      assert.equal(yield* parseCap({ T3CODE_CONTEXT_HANDOFF_TOKEN_CAP: "16000" }), 16_000);
+      assert.equal(estimateTextTokens("a界🧪"), 1);
+      assert.equal(estimateTextTokens("a界🧪!"), 2);
+      const base = {
+        userText: "Continue",
+        attachments: [],
+        providerThread,
+        nativeContextEstimate: 0,
+      };
+      assert.equal(handoffBudget({ ...base, tokenCap: defaultCap }), defaultCap);
+      assert.equal(handoffBudget({ ...base, tokenCap: maximumCap }), 203_997);
+      assert.equal(
+        handoffBudget({ ...base, modelContextWindow: 1_000_000, tokenCap: 1_000_000 }),
+        maximumCap,
+      );
+      for (const budget of [defaultCap, maximumCap]) {
+        const within = message("full", "assistant", "界🧪x".repeat(budget - 500));
+        const over = message("oversized", "user", "界🧪x".repeat(budget));
+        const selected = selectHistory({ messages: [within, over], coverage: "History", budget });
+        assert.deepEqual(selected.messages, [within]);
+        assert.deepEqual(selected.omittedItemIds, [over.itemId]);
+      }
+    }),
+  );
 
   it("keeps measured occupancy across a model change", () => {
     const previous = {
@@ -383,7 +429,7 @@ describe("handoff budget", () => {
         userText: "Continue work",
         attachments: [],
         providerThread,
-        nativeContextEstimate: 120_000,
+        nativeContextEstimate: 204_000,
       }),
       0,
     );
@@ -408,8 +454,8 @@ describe("handoff budget", () => {
       assert.isAtLeast(budget, 0);
       assert.isAtMost(budget, previousBudget);
       previousBudget = budget;
-      if (count <= 8) assert.equal(budget, 16_000);
-      if (count === 10) {
+      if (count <= 22) assert.equal(budget, 16_000);
+      if (count === 23) {
         assert.isAbove(budget, 0);
         assert.isBelow(budget, 16_000);
       }
@@ -419,8 +465,8 @@ describe("handoff budget", () => {
         assert.isAtMost(historyCost(selected.messages, selected.context), budget);
       }
       assert.equal(handoffBudget({ ...input, modelContextWindow: 2_000_000 }), 16_000);
-      // 20k window: half is reserved for work, then 27 prompt bytes and 8,192 per image.
-      const smallWindowBudget = count === 1 ? 1_781 : 0;
+      // Half the 20k window is reserved for work, then seven prompt tokens and 8,192 per image.
+      const smallWindowBudget = count === 1 ? 1_801 : 0;
       assert.equal(handoffBudget({ ...input, modelContextWindow: 20_000 }), smallWindowBudget);
       assert.equal(
         handoffBudget({
@@ -451,7 +497,7 @@ describe("handoff delivery", () => {
   ])("records omitted recovery coverage separately from $label text", ({ native }) =>
     Effect.gen(function* () {
       const omittedBeforeDelivery = TurnItemId.make("item:omitted-during-preparation");
-      const oversized = message("item:oversized", "user", "x".repeat(20_000));
+      const oversized = message("item:oversized", "user", "x".repeat(64_000));
       let durable: OrchestrationV2ContextHandoff = {
         ...handoff,
         history: {
@@ -590,7 +636,7 @@ describe("handoff delivery", () => {
       const result = yield* deliverContextHandoffs({
         handoffs: many,
         providerThread,
-        budget: 2_500,
+        budget: 625,
         alreadyDeliveredItemIds: new Set(),
         inject: (history) =>
           Effect.sync(() => {
@@ -604,7 +650,7 @@ describe("handoff delivery", () => {
       assert.include(captured.context, "detailed coverage references omitted");
       assert.include(captured.context, "t3_thread_read");
       assert.include(captured.context, threadId);
-      assert.isAtMost(historyCost(captured.messages, captured.context), 2_500);
+      assert.isAtMost(historyCost(captured.messages, captured.context), 625);
       assert.isAbove(captured.messages.length, 0);
     }),
   );
@@ -660,7 +706,7 @@ describe("handoff delivery", () => {
         persist: () => Effect.void,
       });
       const serialized = yield* encodeJson(delivered);
-      assert.isAtMost(Buffer.byteLength(serialized), 2_500);
+      assert.isAtMost(serialized.length, 2_500 * 4);
       assert.notInclude(serialized, "Preserve every line");
       assert.equal(serialized.split("Partial work").length - 1, 1);
       assert.include(serialized, "Latest result");

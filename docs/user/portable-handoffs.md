@@ -28,21 +28,23 @@ never shortens your request to make it fit.
 
 Recovery leaves running background work intact. Let it finish or stop it before retrying the handoff.
 
-Server operators can set `T3CODE_CONTEXT_HANDOFF_TOKEN_CAP` to change the initial history allowance
-(default 16,000; clamped to 1,024–64,000). This is an upper bound, not a provider context-window
-guarantee. Text accounting conservatively charges one token per UTF-8 byte, including attribution
-and JSON escaping. Imported history has a separate 64,000-byte ceiling; your current input and
-attachment payloads do not consume that ceiling.
+The default history allowance is 160,000 estimated tokens, equivalent to 640,000 UTF-16 code
+units. To change it, set `T3CODE_CONTEXT_HANDOFF_TOKEN_CAP` on the server to a token count between
+1,024 and 250,000. The maximum is equivalent to 1,000,000 UTF-16 code units. Attribution,
+separators and JSON escaping count toward the allowance.
 
 T3 Code uses available capacity information for your selected model and options, together with
 provider context telemetry. Starting a fresh provider conversation clears prior usage, while keeping
-known model capacity. Changing models or context-window options discards stale usage and compaction
-thresholds.
+known model capacity. When you change models or context-window options in the same native
+conversation, its existing messages still consume space.
 
-When no capacity information is available, T3 Code assumes a 128,000-token window. It reserves at
-least 16,000 tokens, or a quarter of the window when larger, for instructions, tools, and subsequent
-work. Images reserve an estimated 8,192 tokens each, independent of their file size; other
-attachments reserve 4,096 each for their references. Existing context is estimated from saved
-activity when usage telemetry is unavailable. Known smaller windows still constrain the handoff.
-These are fallback estimates, not exact token counts. Image resolution, custom models, and hidden
-native context can differ, so the provider may still reject an input.
+When no capacity information is available, T3 Code assumes a 272,000-token window. It reserves
+one quarter for instructions, tools and subsequent work, with a minimum of 16,000 tokens and a
+maximum of half the window. It also deducts the current request and 8,192 estimated tokens per
+image or 4,096 per other attachment. Known smaller windows and provider compaction thresholds
+still constrain the handoff.
+
+T3 Code estimates one token per four UTF-16 code units in text. It uses the same estimate for
+saved activity when native usage telemetry is unavailable. The provider's own tokenizer may
+count more tokens, particularly for some languages and code, and can reject an input that fits
+the estimate.

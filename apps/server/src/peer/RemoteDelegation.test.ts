@@ -1841,11 +1841,13 @@ it.effect.each([
           ),
         ).toBe(true);
         if (scenario === "cancelled" || scenario === "interrupted") {
-          // A run that did not complete keeps the established scan, without the probe.
-          expect(pages.map((read) => read.afterPosition)).not.toContain(tailPosition);
-          const forwards = pages.slice(1).map((read) => read.afterPosition ?? -1);
-          expect(forwards.length).toBeGreaterThan(0);
-          expect(forwards).toEqual([...forwards].sort((left, right) => left - right));
+          // An ordinary scan can reach the aligned tail, including when each page fits 100 items.
+          const positions = pages.map((read) => read.afterPosition ?? -1);
+          expect(positions.length).toBeGreaterThan(1);
+          for (const [index, next] of positions.slice(1).entries()) {
+            expect(next).toBeGreaterThan(positions[index]!);
+            expect(next - positions[index]!).toBeLessThanOrEqual(100);
+          }
         } else {
           expect(pages.at(1)?.afterPosition).toBe(tailPosition);
           const rest = pages.slice(2);
